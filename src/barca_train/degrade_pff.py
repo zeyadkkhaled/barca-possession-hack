@@ -95,7 +95,11 @@ def to_25fps(d: dict) -> dict:
     v = had(d["label_state"], d["label_team_id"], d["period"], int(d["home_team_id"]), loose="last")
     mask0 = d["label_score_mask"] & (d["label_state"] <= 3) & (d["period"] > 0) & (v >= 0)
     lab = np.where(v[near] < 0, 2, v[near]).astype(np.int8)
-    return dict(match_id=int(d["match_id"]), fold=int(d["fold"]), t=t, period=period, px=px, py=py,
+    extra = {}
+    if "label_player_slot" in d:                    # the 4-state answer key at 25 fps (PathCRF targets; never an input)
+        extra = dict(label_state=d["label_state"][near].astype(np.int8),
+                     label_player=d["label_player_slot"][near].astype(np.int16))
+    return dict(**extra, match_id=int(d["match_id"]), fold=int(d["fold"]), t=t, period=period, px=px, py=py,
                 team_sign=np.where(d["player_side"] == 0, 1.0, -1.0).astype(np.float32),
                 ball_true_x=bx, ball_true_y=by, ball_speed_true=np.hypot(bvx, bvy).astype(np.float32),
                 label_had=lab, label_mask=mask0[near], pitch=np.array(PITCH, np.float32))
@@ -108,8 +112,9 @@ def _runs(mask):
     return list(zip(np.flatnonzero(e == 1), np.flatnonzero(e == -1)))
 
 
-def degrade_players(px, py, team_sign, period, rng, rates: dict):
-    """Break / swap / drop tracks; returns new (px, py, team_sign) with anonymous slot columns."""
+def degrade_players(px, py, team_sign, period, rng, rates: dict, return_owner: bool = False):
+    """Break / swap / drop tracks; returns new (px, py, team_sign) with anonymous slot columns, plus with return_owner the
+    true player column held by each (frame, slot) (-1 = empty; training targets only, never a model input)."""
     n, P = px.shape
     gap_f = max(1, int(round(BREAK_GAP_S * FPS)))
     pieces = []                                    # [player, a, b)
@@ -165,10 +170,12 @@ def degrade_players(px, py, team_sign, period, rng, rates: dict):
         cols_end[j] = pieces[ch[-1]][2]
         assign.append((j, ch))
     nx, ny = np.full((n, len(cols_end)), np.nan, np.float32), np.full((n, len(cols_end)), np.nan, np.float32)
+    own = np.full((n, len(cols_end)), -1, np.int16)
     for j, ch in assign:
         for i in ch:
             c, a, b = pieces[i]
             nx[a:b, j], ny[a:b, j] = px[a:b, c], py[a:b, c]
+            own[a:b, j] = c
     # drop-out runs
     drop_f = max(1, int(round(rates.get("drop_len_s", DROP_RUN_S) * FPS)))
     for j in range(nx.shape[1]):
@@ -177,6 +184,8 @@ def degrade_players(px, py, team_sign, period, rng, rates: dict):
         for a in rng.integers(0, n, size=k):
             b = min(n, a + 1 + int(rng.exponential(drop_f)))
             nx[a:b, j] = ny[a:b, j] = np.nan
+    if return_owner:
+        return nx, ny, np.array(cols_team, np.float32), np.where(np.isfinite(nx), own, -1).astype(np.int16)
     return nx, ny, np.array(cols_team, np.float32)
 
 
@@ -282,6 +291,8 @@ def add_extra_slots(m: dict, rng, cfg: dict) -> dict:
     at least 11 slots (so each one creates over-11 frames). Seeded by the caller's rng."""
     m = dict(m)
     px, py, ts, per = m["px"].copy(), m["py"].copy(), m["team_sign"].copy(), m["period"]
+    own = m["owner"].copy() if "owner" in m else None          # true player per (frame, slot), moved with the tracks
+    new_o = []
     n = len(per)
     inper = per > 0
     n_in = max(int(inper.sum()), 1)
@@ -308,7 +319,7 @@ def add_extra_slots(m: dict, rng, cfg: dict) -> dict:
             b -= 1
         if b <= a:
             continue
-        gx = np.full(n, np.nan, np.float32); gy = np.full(n, np.nan, np.float32)
+        gx = np.full(n, np.nan, np.float32); gy = np.full(n, np.nan, np.float32); go = np.full(n, -1, np.int16)
         if kind == "b":
             cand = np.flatnonzero((ts == -side) & np.isfinite(px[a]))
             if not len(cand):
@@ -320,32 +331,40 @@ def add_extra_slots(m: dict, rng, cfg: dict) -> dict:
                 continue
             gx[a:b], gy[a:b] = px[a:b, j], py[a:b, j]
             px[a:b, j] = py[a:b, j] = np.nan
+            if own is not None:
+                go[a:b] = own[a:b, j]
+                own[a:b, j] = -1
             (na if side > 0 else nh)[a:b] -= 1
         else:
             if ref is None:
                 ref = _referee_path(m["ball_true_x"], m["ball_true_y"], per, rng)
             gx[a:b], gy[a:b] = ref[0][a:b], ref[1][a:b]
-        new_x.append(gx); new_y.append(gy); new_t.append(side)
+        new_x.append(gx); new_y.append(gy); new_t.append(side); new_o.append(go)
         mine[a:b] += 1
         o2 = inper[a:b] & ((nh[a:b] > 11) | (na[a:b] > 11))
         cur += int(o2.sum() - over[a:b].sum())
         over[a:b] = o2
     if new_x:
         # pack the new tracks into as few columns as possible (per team, MIN_REUSE frames apart)
-        cols_x, cols_y, cols_t, ends = [], [], [], []
-        for gx, gy, side in sorted(zip(new_x, new_y, new_t), key=lambda z: int(np.argmax(np.isfinite(z[0])))):
+        cols_x, cols_y, cols_t, cols_o, ends = [], [], [], [], []
+        for gx, gy, side, go in sorted(zip(new_x, new_y, new_t, new_o), key=lambda z: int(np.argmax(np.isfinite(z[0])))):
             fin = np.flatnonzero(np.isfinite(gx))
             s0, e0 = int(fin[0]), int(fin[-1]) + 1
             k = next((i for i in range(len(cols_x)) if cols_t[i] == side and ends[i] + MIN_REUSE <= s0), None)
             if k is None:
                 cols_x.append(np.full(n, np.nan, np.float32)); cols_y.append(np.full(n, np.nan, np.float32))
-                cols_t.append(side); ends.append(0); k = len(cols_x) - 1
+                cols_t.append(side); ends.append(0); cols_o.append(np.full(n, -1, np.int16)); k = len(cols_x) - 1
             cols_x[k][s0:e0], cols_y[k][s0:e0] = gx[s0:e0], gy[s0:e0]
+            cols_o[k][s0:e0] = go[s0:e0]
             ends[k] = e0
         px = np.concatenate([px, np.stack(cols_x, 1)], 1)
         py = np.concatenate([py, np.stack(cols_y, 1)], 1)
         ts = np.concatenate([ts, np.array(cols_t, np.float32)])
+        if own is not None:
+            own = np.concatenate([own, np.stack(cols_o, 1)], 1)
     m["px"], m["py"], m["team_sign"] = px, py, ts
+    if own is not None:
+        m["owner"] = own
     m["extra_frac"] = np.float32(cur / n_in)
     return m
 
@@ -382,11 +401,16 @@ def clean_match(d: dict) -> dict:
 
 
 def degrade_match(d: dict, stats: dict, seed: int, dead_weight: float = 1.0, m25: dict | None = None,
-                  extra: dict | None = None) -> dict:
+                  extra: dict | None = None, owner: bool = False) -> dict:
+    """owner=True also keeps m['owner'] (true player column per frame and slot; PathCRF training targets only). The
+    random draws are the same either way."""
     m = dict(m25) if m25 is not None else to_25fps(d)
     rng = np.random.default_rng(seed + m["match_id"])
     r = rates_from(stats)
-    m["px"], m["py"], m["team_sign"] = degrade_players(m["px"], m["py"], m["team_sign"], m["period"], rng, r)
+    res = degrade_players(m["px"], m["py"], m["team_sign"], m["period"], rng, r, return_owner=owner)
+    m["px"], m["py"], m["team_sign"] = res[:3]
+    if owner:
+        m["owner"] = res[3]
     m["bx"], m["by"] = degrade_ball(m["ball_true_x"], m["ball_true_y"], m["ball_speed_true"], m["period"], rng, stats["gap"],
                                     lab=m["label_had"], dead_weight=dead_weight)
     m["dead_weight"] = np.float32(dead_weight)

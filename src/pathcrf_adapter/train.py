@@ -1,11 +1,11 @@
-"""Train PathCRF (+ travelling/loose head) on our data. One run = one folder:
+"""Train PathCRF (+ travelling/loose head) on the built lane files (pathcrf_adapter.build; --data = the built folder). One run = one folder:
 
 <run_dir>/checkpoints/{last.pt,best.pt}   only these two are kept
 <run_dir>/logs/epochs.jsonl              one line per epoch (train + validation scores)
 <run_dir>/config.json, NOTES.md          settings; NOTES.md is rewritten after training (and again after scoring)
 
-    python -m m1pc.train --data DATA --run-dir RUN --fold 0 [flags]       # train on the other 4 folds (24 matches)
-    python -m m1pc.train --data DATA --run-dir RUN --all --max-epochs E    # all 30 learning matches, fixed epochs
+    python -m pathcrf_adapter.train --data DATA --run-dir RUN --fold 0 [flags]       # train on the other 4 folds (24 matches)
+    python -m pathcrf_adapter.train --data DATA --run-dir RUN --all --max-epochs E    # all 30 learning matches, fixed epochs
 
 Fast config (default) and the flags that switch each item back:
   fine-tune from PathCRF's published weights      --from-scratch

@@ -1,0 +1,29 @@
+{
+ "window": {
+  "windows": 634,
+  "share_both_teams_ge10": 0.6876971608832808,
+  "share_both_teams_eq11": 0.30914826498422715,
+  "mean_lanes_per_team": 9.81230283911672,
+  "mean_links_per_window": 1.7649842271293374,
+  "cover": 0.8,
+  "win_s": 10.0
+ },
+ "window_any": {
+  "windows": 634,
+  "share_both_teams_ge10": 0.9022082018927445,
+  "share_both_teams_eq11": 0.6766561514195584,
+  "mean_lanes_per_team": 10.598580441640378,
+  "mean_links_per_window": 1.7649842271293374,
+  "cover": 1e-09,
+  "win_s": 10.0
+ },
+ "links": {
+  "n_links": 1124,
+  "forced_share": 0.14145907473309607,
+  "gap_s_p50": 3.56,
+  "dist_m_p50": 4.420562945080585,
+  "dist_m_p90": 35.821281578318576
+ },
+ "trimmed_share": 0.01466293494024963,
+ "slots_in": 46
+}

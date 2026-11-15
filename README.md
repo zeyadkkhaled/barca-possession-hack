@@ -5,13 +5,23 @@ is one label per frame of FC Barcelona vs Athletic Club: H (home), A (away), D (
 on possession-spell F1. Rules summary: [docs/HACKATHON_RULES.md](docs/HACKATHON_RULES.md). Official repo:
 <https://github.com/metrica-sports/more-than-a-hack-2027>.
 
-## Status
+## Status (2026-11-16)
 
-**These are components copied from our M1 project (PFF World Cup 2022 possession models). They are not adapted to the
-hackathon yet.** Nothing here reads the hackathon data. The copied code still assumes PFF conventions: 29.97 fps,
-centre-origin metres, PFF player ids, and M1 data paths. What needs changing is listed in
-[docs/HANDOFF_FOR_PLANNING.md](docs/HANDOFF_FOR_PLANNING.md). Where each file came from:
-[docs/PROVENANCE.md](docs/PROVENANCE.md).
+- **Submitted model:** C3-T, team-level LightGBM plus a 3-state Viterbi, trained on PFF World Cup 2022 degraded to look
+  like Metrica's tracking. Method and results: [docs/technical.md](docs/technical.md).
+- **Reproduce the submission (one command, no training):**
+
+  ```powershell
+  .\.venv\Scripts\python.exe run.py            # -> outputs/submission.csv, then the official validator
+  ```
+
+  It reads the hackathon data (`data/` or `MTAH_DATA_DIR`) and the saved models in `models/c3/` and `models/bfp/`. It
+  is deterministic: two runs and `outputs/submission_c3.csv` give the same sha256.
+- **Step 2 (PathCRF, in progress):**
+  - re-linking: `barca_possession.relink`;
+  - the adapter at 25 fps: `pathcrf_adapter`;
+  - the HPC cycle: [hpc/step2/HPC_STEP2.md](hpc/step2/HPC_STEP2.md).
+- Where the M1 code came from: [docs/PROVENANCE.md](docs/PROVENANCE.md).
 
 ## Step 1 pipeline (C3-T, written 2026-11-15)
 
@@ -36,11 +46,14 @@ reference/more-than-a-hack-2027/  official repo (git submodule, read-only): scor
 src/barca_possession/             tag-free possession code from M1: ball smoother, C0-C2 baselines/rules, C3 features,
                                   decoder and post-processing, ball-from-players, gap fills, scratch-dir helper
 src/barca_labels/                 M1 labels v2 builder (PFF events) and our scorer (score_had = H/A/D macroF1 + spellF1)
-src/pathcrf_adapter/              M1 PathCRF adapter (m1pc): data adapter, multi-task head, train / predict / combine / cycle
+src/pathcrf_adapter/              PathCRF for the hackathon: build (degraded + relinked PFF, on the HPC), adapter (25 fps lanes),
+                                  model + travelling/loose head, train / predict, C3-T fold model, scorer, cycle bookkeeping
 vendor/pathcrf/                   PathCRF (MPL-2.0), vendored unchanged
 scripts/c3/                       M1 C3 training / evaluation pipelines (round 1-5, incl. the restart detector in c3v4.py)
 scripts/check_scorer_parity.py    our scorer vs the official one on the public GT + baselines + synthetic cases
-hpc/                              M1 HPC bundle: Slurm jobs, run_cycle.sh, env/setup_env.sh, tools/ (bundle + package export)
+hpc/step2/                        step-2b HPC cycle: run_step2.sh, jobs/, env/, build_zip.py, HPC_STEP2.md
+hpc/                              (the rest) M1's HPC bundle as copied: Slurm jobs, run_cycle.sh, tools/ (package export)
+run.py                            one command: raw data + saved models -> outputs/submission.csv
 models/README.md                  where the trained models live (no weights in git)
 data/                             EMPTY, git-ignored: hackathon data goes here (never committed)
 tests/                            the copied M1 unit tests
@@ -58,7 +71,7 @@ git clone --recurse-submodules <this repo> ; cd barca-possession-hack   # or: gi
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-PathCRF (torch) runs on the HPC only; see `hpc/env/setup_env.sh`.
+PathCRF (torch) runs on the HPC only; see [hpc/step2/HPC_STEP2.md](hpc/step2/HPC_STEP2.md). On Windows set `PYTHONUTF8=1`.
 
 ## Official scorer
 
@@ -78,7 +91,9 @@ The public 5 minutes are only for checking the pipeline. The rules forbid traini
 ## Hackathon obligations for this repo
 
 - **The repo must regenerate the submission CSV**: exactly the same file, from the provided data, with one documented
-  command. It must have pinned dependencies and install instructions. No such command exists yet.
+  command (`python run.py`). It must have pinned dependencies and install instructions.
+  - *Open:* `models/` is git-ignored, so the small LightGBM text models that `run.py` needs (`models/c3`, `models/bfp`,
+    about 10 MB, trained on degraded PFF only) are not in git yet. They must be shipped or hosted before submission.
 - **It must be public at submission time.** It is private for now. Before making it public, check that no data, derived
   frame-level exports, PFF data or unlicensed weights are in the history. `.gitignore` excludes `data/`, `*.npz`,
   `*.parquet`, `*.pt`, `models/*` and video.
