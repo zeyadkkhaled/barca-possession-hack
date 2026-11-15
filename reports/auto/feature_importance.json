@@ -1,0 +1,88 @@
+{
+ "layer1": [
+  {
+   "name": "ball_speed@+2",
+   "gain_share": 0.22681111845201374
+  },
+  {
+   "name": "ball_speed@+0.8",
+   "gain_share": 0.1514517665445769
+  },
+  {
+   "name": "ball_speed@+0.4",
+   "gain_share": 0.0712051550981338
+  },
+  {
+   "name": "since_beyond_s",
+   "gain_share": 0.06956487700799886
+  },
+  {
+   "name": "top3_sp@+0.8",
+   "gain_share": 0.03421106232772414
+  },
+  {
+   "name": "top3_sp@+2",
+   "gain_share": 0.031538535422493755
+  },
+  {
+   "name": "top3_sp@+0",
+   "gain_share": 0.0264924999430567
+  },
+  {
+   "name": "top3_sp@-0.4",
+   "gain_share": 0.026006639526598863
+  },
+  {
+   "name": "ball_out_y",
+   "gain_share": 0.020462215272977133
+  },
+  {
+   "name": "top3_sp@+0.4",
+   "gain_share": 0.020394007944270126
+  }
+ ],
+ "layer2": [
+  {
+   "name": "away_sdy",
+   "gain_share": 0.23288379813288665
+  },
+  {
+   "name": "home_sdy",
+   "gain_share": 0.16411921662877244
+  },
+  {
+   "name": "dh_minus_da@-2",
+   "gain_share": 0.07581310520356416
+  },
+  {
+   "name": "dh_minus_da@-1",
+   "gain_share": 0.06915319078323626
+  },
+  {
+   "name": "away_cvx",
+   "gain_share": 0.06124187861581648
+  },
+  {
+   "name": "home_cvx",
+   "gain_share": 0.041863378226732306
+  },
+  {
+   "name": "dh_minus_da@-0.4",
+   "gain_share": 0.02124125149225379
+  },
+  {
+   "name": "home_sdx",
+   "gain_share": 0.020655833000537686
+  },
+  {
+   "name": "ball_minus_home_cx",
+   "gain_share": 0.02028730046158961
+  },
+  {
+   "name": "dmin@-0.8",
+   "gain_share": 0.01699053182945973
+  }
+ ],
+ "n_features_l1": 124,
+ "n_features_l2": 134
+}

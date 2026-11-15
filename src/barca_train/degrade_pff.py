@@ -251,6 +251,15 @@ def restarts(lab, period, fps: float = FPS):
     return out
 
 
+def clean_match(d: dict) -> dict:
+    """No degradation (step-1b check): PFF at 25 fps in the same form, player columns keep their identities, the model
+    ball is the true ball."""
+    m = to_25fps(d)
+    m["bx"], m["by"] = m["ball_true_x"].copy(), m["ball_true_y"].copy()
+    m["dead_weight"] = np.float32(np.nan)
+    return m
+
+
 def degrade_match(d: dict, stats: dict, seed: int, dead_weight: float = 1.0, m25: dict | None = None) -> dict:
     m = dict(m25) if m25 is not None else to_25fps(d)
     rng = np.random.default_rng(seed + m["match_id"])
@@ -296,6 +305,8 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--matches", type=int, nargs="*", help="subset of match ids (default: all 30)")
     ap.add_argument("--auto-name", default="degrade_stats.json", help="aggregate summary file in reports/auto ('' = none)")
+    ap.add_argument("--dead-weight", type=float, help="fixed dead-ball gap weight (default: calibrated); 1 = no weighting")
+    ap.add_argument("--clean", action="store_true", help="no degradation at all (25 fps, same form, true ball)")
     a = ap.parse_args()
     t0 = time.time()
     stats = json.loads(Path(a.stats).read_text())
@@ -305,11 +316,13 @@ def main() -> int:
     if a.matches:
         files = [f for f in files if int(f.stem) in set(a.matches)]
     print(f"rates: {rates_from(stats)}")
-    dw = calibrate_dead_weight(files, stats, a.seed)
-    print(f"dead_weight: {dw:g}")
+    dw = (float("nan") if a.clean else a.dead_weight if a.dead_weight is not None
+          else calibrate_dead_weight(files, stats, a.seed))
+    print(f"dead_weight: {dw:g}" + (" (clean: no degradation)" if a.clean else ""))
     agg_gap, agg_slot, before = [], [], []
     for f in files:
-        m = degrade_match(load_package_match(f), stats, a.seed, dead_weight=dw)
+        d = load_package_match(f)
+        m = clean_match(d) if a.clean else degrade_match(d, stats, a.seed, dead_weight=dw)
         before.append(missing_before(~np.isfinite(m["bx"]), m["period"], restarts(m["label_had"], m["period"]),
                                      BEFORE_RESTART_S))
         np.savez_compressed(out / f"{m['match_id']}.npz", **m)

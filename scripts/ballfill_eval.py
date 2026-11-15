@@ -20,19 +20,25 @@ import numpy as np
 from barca_possession import ballfill as BF
 from barca_possession.paths import AUTO, MODELS, OUT, PFF_PACKAGE
 
-DEG = OUT / "pff_degraded"
+DEG = OUT / "pff_degraded"      # matches to fill (--deg)
+TRAIN = OUT / "pff_degraded"    # matches the ball-from-players model is trained on (--train-deg)
 FILL = OUT / "ballfill"
 
 
-def load(mid):
-    with np.load(DEG / f"{mid}.npz") as z:
+def load(mid, d=None):
+    with np.load((d or DEG) / f"{mid}.npz") as z:
         return {k: z[k] for k in z.files}
 
 
 def job_samples(args):
     mid, seed = args
-    m = load(mid)
+    m = load(mid, TRAIN)
     return mid, BF.bfp_samples(m, np.random.default_rng(seed + mid))
+
+
+def _set_dirs(deg, train, fill):
+    global DEG, TRAIN, FILL
+    DEG, TRAIN, FILL = deg, train, fill
 
 
 def job_fill(args):
@@ -65,11 +71,18 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--threads", type=int, default=1)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--deg", default=str(DEG), help="matches to fill")
+    ap.add_argument("--train-deg", help="matches to train ball-from-players on (default: --deg)")
+    ap.add_argument("--fill", default=str(FILL), help="output folder of the fills")
+    ap.add_argument("--no-final", action="store_true", help="do not refit / save models/bfp (check runs)")
+    ap.add_argument("--out-name", default="ballfill_eval.json")
     a = ap.parse_args()
+    dirs = (Path(a.deg), Path(a.train_deg or a.deg), Path(a.fill))
+    _set_dirs(*dirs)
     t0 = time.time()
     folds = json.loads((PFF_PACKAGE / "folds.json").read_text())["folds"]
     mids = sorted(int(p.stem) for p in DEG.glob("*.npz"))
-    with multiprocessing.Pool(a.workers) as pool:
+    with multiprocessing.Pool(a.workers, initializer=_set_dirs, initargs=dirs) as pool:
         S = dict(pool.map(job_samples, [(m, a.seed) for m in mids]))
     print(f"samples: {sum(len(s[1]) for s in S.values())} ({time.time() - t0:.0f} s)", flush=True)
     jobs = []
@@ -79,7 +92,7 @@ def main() -> int:
         strs = [x.model_to_string() for x in mods]
         jobs += [(m, strs) for m in fold if m in S]
         print(f"fold {k} bfp trained ({time.time() - t0:.0f} s)", flush=True)
-    with multiprocessing.Pool(a.workers) as pool:
+    with multiprocessing.Pool(a.workers, initializer=_set_dirs, initargs=dirs) as pool:
         res = pool.map(job_fill, jobs)
     errs = {k: np.concatenate([r[1][k] for r in res]) for k in res[0][1]}
     shares = {k: float(np.mean([r[2][k] for r in res])) for k in res[0][2]}
@@ -90,12 +103,13 @@ def main() -> int:
         if v["n"]:
             print(f"  {k:30s} n={v['n']:8d}  median {v['median_m']:.2f}  p90 {v['p90_m']:.2f}")
     print("share of in-period frames by source: " + ", ".join(f"{k} {100 * v:.1f} %" for k, v in shares.items()))
-    final = BF.fit_bfp([S[m] for m in mids], a.seed, a.threads)
-    (MODELS / "bfp").mkdir(parents=True, exist_ok=True)
-    for nm, mdl in zip(("bfp_dx.txt", "bfp_dy.txt"), final):
-        mdl.save_model(str(MODELS / "bfp" / nm))
+    if not a.no_final:
+        final = BF.fit_bfp([S[m] for m in mids], a.seed, a.threads)
+        (MODELS / "bfp").mkdir(parents=True, exist_ok=True)
+        for nm, mdl in zip(("bfp_dx.txt", "bfp_dy.txt"), final):
+            mdl.save_model(str(MODELS / "bfp" / nm))
     AUTO.mkdir(parents=True, exist_ok=True)
-    (AUTO / "ballfill_eval.json").write_text(json.dumps(dict(error=table, source_share=shares, n_matches=len(mids)), indent=1))
+    (AUTO / a.out_name).write_text(json.dumps(dict(error=table, source_share=shares, n_matches=len(mids)), indent=1))
     print(f"final bfp -> models/bfp/; fills -> outputs/ballfill/ ({time.time() - t0:.0f} s)")
     return 0
 

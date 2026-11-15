@@ -15,6 +15,7 @@ import argparse
 import json
 import multiprocessing
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -26,6 +27,11 @@ from barca_possession.paths import AUTO, OUT, PFF_PACKAGE
 DEG = OUT / "pff_degraded"
 FILL = OUT / "ballfill"
 VARIANTS = {"none": (), **{f"only {r}": (r,) for r in PR.RULES}, "all": PR.RULES}
+
+
+def _set_dirs(deg, fill):
+    global DEG, FILL
+    DEG, FILL = deg, fill
 
 
 def load_match(mid):
@@ -54,11 +60,15 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--folds", type=int, nargs="*")
     ap.add_argument("--out-name", default="cv_c3t.json")
+    ap.add_argument("--deg", default=str(DEG), help="PFF matches in the Metrica form")
+    ap.add_argument("--fill", default=str(FILL), help="their ball fills")
     a = ap.parse_args()
+    dirs = (Path(a.deg), Path(a.fill))
+    _set_dirs(*dirs)
     t0 = time.time()
     folds = json.loads((PFF_PACKAGE / "folds.json").read_text())["folds"]
     mids = sorted(int(p.stem) for p in DEG.glob("*.npz"))
-    with multiprocessing.Pool(a.workers) as pool:
+    with multiprocessing.Pool(a.workers, initializer=_set_dirs, initargs=dirs) as pool:
         F = dict(pool.map(job_features, [(m, a.seed) for m in mids]))
     names = F[mids[0]]["names"]
     print(f"features: {len(names)} per row, {sum(len(f['rows']) for f in F.values())} rows ({time.time() - t0:.0f} s)",
