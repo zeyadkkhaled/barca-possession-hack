@@ -27,8 +27,8 @@
    - a short technical document that lists all training data.
    Teams have 3–5 members. Hand labels on this game are forbidden, and so is any human-made data about it. Data and
    hand labels about other games are fine if the organisers can access them.
-10. ⚠ **Deadline: 17 November 2026, two days away; no time zone stated.** ⚠ The data needs enrolment first, and it is
-    not downloaded yet. ⚠ **No match data or extract of it may go to a hosted LLM** (T&Cs), so a chat assistant can
+10. ⚠ **Deadline: 17 November 2026, two days away; no time zone stated.** ⚠ We are enrolled, but the data is not downloaded
+    yet. ⚠ **No match data or extract of it may go to a hosted LLM** (T&Cs), so a chat assistant can
     write code but must not see data rows, plots or per-frame outputs.
 
 ## 2. What we already have (built on PFF World Cup 2022: 64 matches, ~30 fps, clean tracking, player ids)
@@ -91,8 +91,9 @@
   every frame.
 
 ## 6. Open questions and risks (ranked)
-1. **Time:** 2 days, the data is not in hand, and the time zone of the deadline is unknown. Has the team (3–5 people)
-   enrolled? The output must be produced and reproduced by then.
+1. **Time:** 2 days, and the time zone of the deadline is unknown. We are enrolled (confirmed 2026-11-15), but the data
+   is not downloaded yet. It is not yet confirmed that the team has the required 3–5 members. The output must be produced
+   and reproduced by then.
 2. **Domain shift:** PFF is clean, ~30 fps and has ids. Metrica's tracking is automatic, at 25 fps, has no ids and is
    missing 41 % of the ball. Models trained on PFF may transfer badly, and we have no labelled target data to measure
    it.

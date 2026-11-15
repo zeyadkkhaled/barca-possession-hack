@@ -13,6 +13,22 @@ centre-origin metres, PFF player ids, and M1 data paths. What needs changing is 
 [docs/HANDOFF_FOR_PLANNING.md](docs/HANDOFF_FOR_PLANNING.md). Where each file came from:
 [docs/PROVENANCE.md](docs/PROVENANCE.md).
 
+## Step 1 pipeline (C3-T, written 2026-11-15)
+
+Team-level C3 trained on PFF degraded to look like the Metrica tracking. The commands, in order, are in
+[reports/step1_report.md](reports/step1_report.md). `fit_predict.py` regenerates `outputs/submission_c3.csv`
+deterministically: LightGBM `deterministic=True`, fixed seed, `--threads 1`.
+
+- `barca_possession.load`: the hackathon loader and noise statistics.
+- `barca_train.degrade_pff`: PFF → Metrica form.
+- `barca_possession.ballfill`: smoother plus ball-from-players.
+- `barca_possession.c3t`: features, two layers, 3-state Viterbi.
+- `barca_possession.postrules`: the post-rules.
+- `barca_train.pipeline`: scoring and fold training.
+
+Scripts in `scripts/` print aggregate numbers only. Data-derived files go to `outputs/` (git-ignored). Aggregate
+summaries go to `reports/auto/`.
+
 ## Layout
 
 ```

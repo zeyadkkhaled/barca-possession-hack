@@ -1,0 +1,46 @@
+{
+ "rules": [],
+ "validator_exit": 0,
+ "validator_ok": true,
+ "validator_reason": null,
+ "rows": 199319,
+ "label_share_graded": {
+  "H": 0.33646612991558444,
+  "A": 0.2145388619953795,
+  "D": 0.44899500808903603,
+  "X": 0.0
+ },
+ "n_pred_spells": 229,
+ "mean_spell_s": 15.289257641921397,
+ "public": {
+  "spell_f1": 0.5384615384615384,
+  "macro_f1": 0.9083697318033992,
+  "n_gt_spells": 17,
+  "n_pred_spells": 9
+ },
+ "baseline_smooth50": {
+  "public_spell_f1": 0.3256,
+  "public_macro_f1": 0.6207,
+  "full_spell_f1": 0.2433
+ },
+ "tags": {
+  "set_pieces": 59,
+  "team_H": 16,
+  "team_A": 11,
+  "team_NA": 32,
+  "kickoff_halves": [
+   1,
+   2
+  ]
+ },
+ "ball_source_share": {
+  "seen": 0.5917901005306659,
+  "smoothed": 0.0002580937572785587,
+  "estimated": 0.40795180571205547,
+  "none": 0.0
+ },
+ "decoder": {
+  "w": 1.0,
+  "beta": 0.75
+ }
+}
