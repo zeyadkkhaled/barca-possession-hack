@@ -1,0 +1,428 @@
+{
+ "folds": [
+  {
+   "fold": 0,
+   "w": 1.5,
+   "beta": 1.0,
+   "inner_spell": 0.6078684589376027,
+   "n_test": 6,
+   "none": {
+    "spell": 0.605306007016726,
+    "macro": 0.8992414765812358,
+    "pooled": {
+     "spell": 0.6048546598741384,
+     "macro": 0.9056213720808781
+    }
+   },
+   "only gap_same_team": {
+    "spell": 0.6045694104179921,
+    "macro": 0.898377016448729,
+    "pooled": {
+     "spell": 0.6041528739091183,
+     "macro": 0.9047920237182877
+    }
+   },
+   "only gap_sideline": {
+    "spell": 0.6021511891230596,
+    "macro": 0.8972699566025478,
+    "pooled": {
+     "spell": 0.6018018018018018,
+     "macro": 0.9038174959909079
+    }
+   },
+   "only set_pieces": {
+    "spell": 0.5774654561120517,
+    "macro": 0.8792484870826529,
+    "pooled": {
+     "spell": 0.5770238095238096,
+     "macro": 0.8859776573421502
+    }
+   },
+   "only kickoff": {
+    "spell": 0.605306007016726,
+    "macro": 0.8991809991638782,
+    "pooled": {
+     "spell": 0.6048546598741384,
+     "macro": 0.9055796408061143
+    }
+   },
+   "all": {
+    "spell": 0.573413858823758,
+    "macro": 0.8762371183898806,
+    "pooled": {
+     "spell": 0.5731057202755316,
+     "macro": 0.8831857764683417
+    }
+   },
+   "extra": {
+    "restart_team_acc": 0.9589442815249267,
+    "restart_matched_share": 0.7662921348314606,
+    "short_spell_recall": 0.13649851632047477,
+    "restarts": 445,
+    "restarts_matched": 341,
+    "restarts_team_ok": 327,
+    "short_spells": 337,
+    "short_matched": 46
+   }
+  },
+  {
+   "fold": 1,
+   "w": 1.5,
+   "beta": 1.0,
+   "inner_spell": 0.6040962464607021,
+   "n_test": 6,
+   "none": {
+    "spell": 0.6191861273199307,
+    "macro": 0.9036443568767477,
+    "pooled": {
+     "spell": 0.616601738088103,
+     "macro": 0.9073802131690426
+    }
+   },
+   "only gap_same_team": {
+    "spell": 0.6178499766552353,
+    "macro": 0.9029761067816086,
+    "pooled": {
+     "spell": 0.6153199158906579,
+     "macro": 0.9067493657203912
+    }
+   },
+   "only gap_sideline": {
+    "spell": 0.6170991969485713,
+    "macro": 0.9017380805685181,
+    "pooled": {
+     "spell": 0.6145989786722741,
+     "macro": 0.90547464763879
+    }
+   },
+   "only set_pieces": {
+    "spell": 0.5970558585290825,
+    "macro": 0.8905784880316029,
+    "pooled": {
+     "spell": 0.5948900772430183,
+     "macro": 0.8949765982780574
+    }
+   },
+   "only kickoff": {
+    "spell": 0.6188283455668001,
+    "macro": 0.9035783159473384,
+    "pooled": {
+     "spell": 0.6162421336529817,
+     "macro": 0.9072970080013508
+    }
+   },
+   "all": {
+    "spell": 0.5931735683962812,
+    "macro": 0.8879005400356351,
+    "pooled": {
+     "spell": 0.5911641791044776,
+     "macro": 0.8923045075575212
+    }
+   },
+   "extra": {
+    "restart_team_acc": 0.9432835820895522,
+    "restart_matched_share": 0.7938388625592417,
+    "short_spell_recall": 0.12874251497005987,
+    "restarts": 422,
+    "restarts_matched": 335,
+    "restarts_team_ok": 316,
+    "short_spells": 334,
+    "short_matched": 43
+   }
+  },
+  {
+   "fold": 2,
+   "w": 1.0,
+   "beta": 0.75,
+   "inner_spell": 0.604913250913734,
+   "n_test": 6,
+   "none": {
+    "spell": 0.6030836592291238,
+    "macro": 0.8891866963089529,
+    "pooled": {
+     "spell": 0.5980016203078585,
+     "macro": 0.8948222400280162
+    }
+   },
+   "only gap_same_team": {
+    "spell": 0.5958710871769821,
+    "macro": 0.8877799177100384,
+    "pooled": {
+     "spell": 0.5910966340933769,
+     "macro": 0.8934482170176498
+    }
+   },
+   "only gap_sideline": {
+    "spell": 0.602814070362072,
+    "macro": 0.8887790829812694,
+    "pooled": {
+     "spell": 0.5977309562398704,
+     "macro": 0.8943982311213396
+    }
+   },
+   "only set_pieces": {
+    "spell": 0.5760094285148554,
+    "macro": 0.8696642230206222,
+    "pooled": {
+     "spell": 0.5711533315493712,
+     "macro": 0.8758449316679001
+    }
+   },
+   "only kickoff": {
+    "spell": 0.6030836592291238,
+    "macro": 0.8891337460906712,
+    "pooled": {
+     "spell": 0.5980016203078585,
+     "macro": 0.8947600117558793
+    }
+   },
+   "all": {
+    "spell": 0.5683104989112305,
+    "macro": 0.8677832726768578,
+    "pooled": {
+     "spell": 0.5638320775026912,
+     "macro": 0.8739822607406049
+    }
+   },
+   "extra": {
+    "restart_team_acc": 0.9695290858725761,
+    "restart_matched_share": 0.7746781115879828,
+    "short_spell_recall": 0.1256544502617801,
+    "restarts": 466,
+    "restarts_matched": 361,
+    "restarts_team_ok": 350,
+    "short_spells": 382,
+    "short_matched": 48
+   }
+  },
+  {
+   "fold": 3,
+   "w": 0.5,
+   "beta": 0.5,
+   "inner_spell": 0.6032344795086234,
+   "n_test": 6,
+   "none": {
+    "spell": 0.6186570985185128,
+    "macro": 0.9062346416264416,
+    "pooled": {
+     "spell": 0.6168187744458931,
+     "macro": 0.9136638913290057
+    }
+   },
+   "only gap_same_team": {
+    "spell": 0.6179051283888972,
+    "macro": 0.9060370599969908,
+    "pooled": {
+     "spell": 0.616198563030699,
+     "macro": 0.9136350649384029
+    }
+   },
+   "only gap_sideline": {
+    "spell": 0.6175445278611192,
+    "macro": 0.9054383836224577,
+    "pooled": {
+     "spell": 0.6157963446475196,
+     "macro": 0.9128621847261105
+    }
+   },
+   "only set_pieces": {
+    "spell": 0.5933753535682611,
+    "macro": 0.8855662329222632,
+    "pooled": {
+     "spell": 0.5907792207792207,
+     "macro": 0.8944052310173557
+    }
+   },
+   "only kickoff": {
+    "spell": 0.6186570985185128,
+    "macro": 0.9060243673703674,
+    "pooled": {
+     "spell": 0.6168187744458931,
+     "macro": 0.913559872823897
+    }
+   },
+   "all": {
+    "spell": 0.5914366368482181,
+    "macro": 0.8842353678404429,
+    "pooled": {
+     "spell": 0.589055374592834,
+     "macro": 0.8934212330084189
+    }
+   },
+   "extra": {
+    "restart_team_acc": 0.9552238805970149,
+    "restart_matched_share": 0.8048048048048048,
+    "short_spell_recall": 0.10355987055016182,
+    "restarts": 333,
+    "restarts_matched": 268,
+    "restarts_team_ok": 256,
+    "short_spells": 309,
+    "short_matched": 32
+   }
+  },
+  {
+   "fold": 4,
+   "w": 2.0,
+   "beta": 1.5,
+   "inner_spell": 0.6045731578621303,
+   "n_test": 6,
+   "none": {
+    "spell": 0.6195036689417085,
+    "macro": 0.9049014709622097,
+    "pooled": {
+     "spell": 0.6164507381741489,
+     "macro": 0.9081115703396939
+    }
+   },
+   "only gap_same_team": {
+    "spell": 0.6190672532455329,
+    "macro": 0.9043230039207807,
+    "pooled": {
+     "spell": 0.6161378059836808,
+     "macro": 0.9075673591969914
+    }
+   },
+   "only gap_sideline": {
+    "spell": 0.617969439390411,
+    "macro": 0.9037818928913789,
+    "pooled": {
+     "spell": 0.6148192771084338,
+     "macro": 0.9069788756839133
+    }
+   },
+   "only set_pieces": {
+    "spell": 0.596156074447573,
+    "macro": 0.887427959282305,
+    "pooled": {
+     "spell": 0.5927523210542078,
+     "macro": 0.8911611595559842
+    }
+   },
+   "only kickoff": {
+    "spell": 0.6195036689417085,
+    "macro": 0.9048935908390421,
+    "pooled": {
+     "spell": 0.6164507381741489,
+     "macro": 0.9081026936586275
+    }
+   },
+   "all": {
+    "spell": 0.5941272676096617,
+    "macro": 0.885684220114359,
+    "pooled": {
+     "spell": 0.5907507507507508,
+     "macro": 0.889452339663339
+    }
+   },
+   "extra": {
+    "restart_team_acc": 0.9619377162629758,
+    "restart_matched_share": 0.762532981530343,
+    "short_spell_recall": 0.10843373493975904,
+    "restarts": 379,
+    "restarts_matched": 289,
+    "restarts_team_ok": 278,
+    "short_spells": 332,
+    "short_matched": 36
+   }
+  }
+ ],
+ "variants": [
+  "none",
+  "only gap_same_team",
+  "only gap_sideline",
+  "only set_pieces",
+  "only kickoff",
+  "all"
+ ],
+ "mean": {
+  "none": {
+   "spell": 0.6131473122052004,
+   "macro": 0.9006417284711177,
+   "pooled": {
+    "spell": 0.6101646385110951,
+    "macro": 0.9069845629397827
+   },
+   "n_matches": 30
+  },
+  "only gap_same_team": {
+   "spell": 0.6110525711769278,
+   "macro": 0.8998986209716295,
+   "pooled": {
+    "spell": 0.60808044532232,
+    "macro": 0.9063227233292072
+   },
+   "n_matches": 30
+  },
+  "only gap_sideline": {
+   "spell": 0.6115156847370465,
+   "macro": 0.8994014793332342,
+   "pooled": {
+    "spell": 0.6085876381009256,
+    "macro": 0.9057880318129841
+   },
+   "n_matches": 30
+  },
+  "only set_pieces": {
+   "spell": 0.5880124342343649,
+   "macro": 0.882497078067889,
+   "pooled": {
+    "spell": 0.5849070015401019,
+    "macro": 0.8897283906429031
+   },
+   "n_matches": 30
+  },
+  "only kickoff": {
+   "spell": 0.6130757558545742,
+   "macro": 0.9005622038822594,
+   "pooled": {
+    "spell": 0.6100930565497495,
+    "macro": 0.9069256383494934
+   },
+   "n_matches": 30
+  },
+  "all": {
+   "spell": 0.5840923661178299,
+   "macro": 0.880368103811435,
+   "pooled": {
+    "spell": 0.5810651591788158,
+    "macro": 0.8877621203678504
+   },
+   "n_matches": 30
+  }
+ },
+ "extra": {
+  "restart_team_acc": 0.9579673776662484,
+  "restart_matched_share": 0.7794621026894866,
+  "short_spell_recall": 0.12101534828807556,
+  "restarts": 2045,
+  "restarts_matched": 1594,
+  "restarts_team_ok": 1527,
+  "short_spells": 1694,
+  "short_matched": 205
+ },
+ "mode": "trim11",
+ "dedup": true,
+ "deg": "outputs/pff_extra",
+ "rule_delta": {
+  "gap_same_team": {
+   "spell": -0.002094741028272562,
+   "macro": -0.0007431074994881381
+  },
+  "gap_sideline": {
+   "spell": -0.0016316274681538179,
+   "macro": -0.0012402491378834535
+  },
+  "set_pieces": {
+   "spell": -0.025134877970835467,
+   "macro": -0.018144650403228657
+  },
+  "kickoff": {
+   "spell": -7.155635062616739e-05,
+   "macro": -7.952458885829294e-05
+  }
+ },
+ "rules_kept": [],
+ "n_features": 124,
+ "threads": 1,
+ "seed": 0
+}

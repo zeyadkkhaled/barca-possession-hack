@@ -25,9 +25,14 @@ TRAIN = OUT / "pff_degraded"    # matches the ball-from-players model is trained
 FILL = OUT / "ballfill"
 
 
+PREP = ("current", False)       # (feature mode, dedup): the player clean-up applied before anything (c3t.prepare_players)
+
+
 def load(mid, d=None):
+    from barca_possession.c3t import prepare_players
     with np.load((d or DEG) / f"{mid}.npz") as z:
-        return {k: z[k] for k in z.files}
+        m = {k: z[k] for k in z.files}
+    return prepare_players(m, PREP[0], dedup=PREP[1])
 
 
 def job_samples(args):
@@ -36,9 +41,9 @@ def job_samples(args):
     return mid, BF.bfp_samples(m, np.random.default_rng(seed + mid))
 
 
-def _set_dirs(deg, train, fill):
-    global DEG, TRAIN, FILL
-    DEG, TRAIN, FILL = deg, train, fill
+def _set_dirs(deg, train, fill, prep=("current", False)):
+    global DEG, TRAIN, FILL, PREP
+    DEG, TRAIN, FILL, PREP = deg, train, fill, prep
 
 
 def job_fill(args):
@@ -76,8 +81,10 @@ def main() -> int:
     ap.add_argument("--fill", default=str(FILL), help="output folder of the fills")
     ap.add_argument("--no-final", action="store_true", help="do not refit / save models/bfp (check runs)")
     ap.add_argument("--out-name", default="ballfill_eval.json")
+    ap.add_argument("--mode", default="current", choices=("current", "robust", "trim11"), help="player clean-up (c3t.prepare_players)")
+    ap.add_argument("--dedup", action="store_true", help="apply the duplicate rule (load.remove_duplicates)")
     a = ap.parse_args()
-    dirs = (Path(a.deg), Path(a.train_deg or a.deg), Path(a.fill))
+    dirs = (Path(a.deg), Path(a.train_deg or a.deg), Path(a.fill), (a.mode, a.dedup))
     _set_dirs(*dirs)
     t0 = time.time()
     folds = json.loads((PFF_PACKAGE / "folds.json").read_text())["folds"]

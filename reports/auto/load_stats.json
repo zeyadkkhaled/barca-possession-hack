@@ -225,6 +225,41 @@
  },
  "missing_before_set_piece": 0.6682758620689656,
  "n_set_piece_tags": 59,
+ "dup": {
+  "over11_before": 0.12857475591255027,
+  "over11_after": 0.12724651730801917,
+  "dropped_slot_frames_frac": 6.544643378387928e-05,
+  "frames_with_drop_frac": 0.001340828543910561,
+  "dropped_segment_s": {
+   "bins": [
+    "<0.2",
+    "0.2-0.5",
+    "0.5-1",
+    "1-2",
+    "2-5",
+    "5-10",
+    "10-30",
+    "30+"
+   ],
+   "counts": [
+    0,
+    1,
+    0,
+    2,
+    9,
+    3,
+    9,
+    8
+   ],
+   "median": 13.22,
+   "n": 32
+  },
+  "rule": {
+   "max_team": 11,
+   "max_dist_m": 0.5,
+   "max_dv_mps": 1.0
+  }
+ },
  "orientation": {
   "1": {
    "flipped": false,

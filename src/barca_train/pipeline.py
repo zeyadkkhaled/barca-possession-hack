@@ -28,6 +28,71 @@ def score_hda(gt, mask, period, pred) -> dict:
     return dict(spell=r["spell_f1"], macro=r["macro_f1"], raw=s)
 
 
+def _matched_true(lb, le, lc, pb, pe, pc, thr=0.5):
+    """One-to-one greedy matching at IoU >= thr (the spell-F1 rule); a bool per true spell (M1's matched_true)."""
+    pairs = []
+    for i, (b, e, c) in enumerate(zip(lb, le, lc)):
+        lo, hi = np.searchsorted(pe, b, "right"), np.searchsorted(pb, e, "left")
+        for j in range(lo, hi):
+            if pc[j] == c:
+                inter = min(e, pe[j]) - max(b, pb[j])
+                if inter > 0:
+                    pairs.append((inter / (max(e, pe[j]) - min(b, pb[j])), i, j))
+    pairs.sort(reverse=True)
+    ok, used = np.zeros(len(lb), bool), set()
+    for iou, i, j in pairs:
+        if iou < thr:
+            break
+        if not ok[i] and j not in used:
+            ok[i] = True; used.add(j)
+    return ok
+
+
+def extra_metrics(gt, mask, period, pred, fps: float = 25.0) -> dict:
+    """Counts for M1's two PathCRF-strength metrics, on H/A/D codes:
+    restart team (matched): true D -> H/A transitions on scored frames; the predicted D end nearest within +-2 s, team
+    compared (M1 c3v4.restart_metrics "matched"); short spells: true H/A spells < 2 s matched at IoU >= 0.5 (recall)."""
+    lv, pv = np.where(gt < 0, D, gt), np.where(pred < 0, D, pred)
+    per = np.where(period > 0, period, 0)
+
+    def ends(v):
+        return np.flatnonzero((v[:-1] == D) & (v[1:] != D) & (per[1:] == per[:-1]) & (per[1:] > 0)) + 1
+
+    te, pe = ends(lv), ends(pv)
+    te = te[np.isin(lv[te], (H, A)) & mask[te]]
+    tol = int(round(2 * fps))
+    n_m = n_ok = 0
+    for b in te:
+        j = np.searchsorted(pe, b)
+        c = [pe[i] for i in (j - 1, j) if 0 <= i < len(pe) and abs(pe[i] - b) <= tol]
+        if c:
+            p0 = min(c, key=lambda x: abs(x - b))
+            n_m += 1
+            n_ok += int(pv[p0] == lv[b])
+    idx = np.flatnonzero(per > 0)
+    l2, p2, r2 = lv[idx], pv[idx], per[idx]
+
+    def spells(v):
+        b = np.flatnonzero(np.r_[True, (v[1:] != v[:-1]) | (r2[1:] != r2[:-1])])
+        e = np.r_[b[1:], len(v)]
+        s = np.isin(v[b], (H, A))
+        return b[s], e[s], v[b[s]]
+
+    lb, le, lc = spells(l2)
+    pb, pe2, pc = spells(p2)
+    ok = _matched_true(lb, le, lc, pb, pe2, pc)
+    short = (le - lb) < 2 * fps
+    return dict(restarts=int(len(te)), restarts_matched=n_m, restarts_team_ok=n_ok,
+                short_spells=int(short.sum()), short_matched=int(ok[short].sum()))
+
+
+def merge_extra(rows: list) -> dict:
+    t = {k: sum(r[k] for r in rows) for k in rows[0]} if rows else {}
+    return dict(restart_team_acc=t["restarts_team_ok"] / max(t["restarts_matched"], 1),
+                restart_matched_share=t["restarts_matched"] / max(t["restarts"], 1),
+                short_spell_recall=t["short_matched"] / max(t["short_spells"], 1), **t) if t else {}
+
+
 def pooled(raws: list) -> dict:
     r = merge_had(raws)
     return dict(spell=r["spell_f1"], macro=r["macro_f1"])

@@ -32,7 +32,8 @@ sys.path.insert(0, str(REF / "evaluation"))
 import possession_metrics as pm  # noqa: E402
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
-from cv_c3t import DEG, job_features  # noqa: E402
+import cv_c3t as CV  # noqa: E402
+from cv_c3t import job_features  # noqa: E402
 
 LETTERS = np.array(["H", "A", "D"])
 
@@ -44,7 +45,16 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--rules", nargs="*", choices=PR.RULES)
     ap.add_argument("--out", default=str(OUT / "submission_c3.csv"))
+    ap.add_argument("--deg", default=str(CV.DEG), help="training matches (PFF in the Metrica form)")
+    ap.add_argument("--fill", default=str(CV.FILL), help="their ball fills")
+    ap.add_argument("--mode", default="current", choices=("current", "robust", "trim11"))
+    ap.add_argument("--dedup", action="store_true")
+    ap.add_argument("--degrade-stats", default="degrade_stats.json",
+                    help="reports/auto file of the training data's degradation (its extra-slot config goes to decoder.json)")
     a = ap.parse_args()
+    dirs = (__import__("pathlib").Path(a.deg), __import__("pathlib").Path(a.fill), (a.mode, a.dedup))
+    CV._set_dirs(*dirs)
+    xdeg = json.loads((AUTO / a.degrade_stats).read_text())["degraded"] if (AUTO / a.degrade_stats).exists() else {}
     t0 = time.time()
     cvf = AUTO / "cv_c3t.json"
     if a.rules is not None:
@@ -57,8 +67,8 @@ def main() -> int:
     print(f"post-rules: {list(rules)}")
 
     # 1. fit on all 30
-    mids = sorted(int(p.stem) for p in DEG.glob("*.npz"))
-    with multiprocessing.Pool(a.workers) as pool:
+    mids = sorted(int(p.stem) for p in CV.DEG.glob("*.npz"))
+    with multiprocessing.Pool(a.workers, initializer=CV._set_dirs, initargs=dirs) as pool:
         F = dict(pool.map(job_features, [(m, a.seed) for m in mids]))
     names = F[mids[0]]["names"]
     print(f"training rows: {sum(len(f['rows']) for f in F.values())} from {len(mids)} matches ({time.time() - t0:.0f} s)", flush=True)
@@ -68,16 +78,19 @@ def main() -> int:
     model["l1"].save_model(str(d / "layer1_dead.txt"))
     model["l2"].save_model(str(d / "layer2_home.txt"))
     (d / "decoder.json").write_text(json.dumps(dict(C=model["C"].tolist(), w=model["w"], beta=model["beta"], step=T.STEP,
-                                                     features=names, rules=list(rules), seed=a.seed, threads=a.threads), indent=1))
+                                                     features=names, rules=list(rules), seed=a.seed, threads=a.threads,
+                                                     feature_mode=a.mode, dedup=a.dedup, train_dir=str(a.deg),
+                                                     extra_slots=xdeg.get("extra")), indent=1))
     print(f"saved models/c3/ ({time.time() - t0:.0f} s)", flush=True)
     del F
 
     # 2. hackathon match
     m = read_metrica()
     m["pitch"] = np.array(m["pitch"], np.float32)
+    m = T.prepare_players(m, a.mode, dedup=a.dedup)
     bfp = [lgb.Booster(model_file=str(MODELS / "bfp" / nm)) for nm in ("bfp_dx.txt", "bfp_dy.txt")]
     ball = BF.fill_ball(m, bfp)
-    rows, X, nm2 = T.features(m, ball)
+    rows, X, nm2 = T.features(m, ball, mode=a.mode)
     assert nm2 == names, "feature names differ between training and the hackathon match"
     f = dict(rows=rows, X=X, prow=m["period"][rows], period=m["period"])
     pred = PL.predict(model, f)
@@ -110,7 +123,7 @@ def main() -> int:
                tags=dict(set_pieces=len(tags), team_H=sum(t["team"] == 0 for t in tags), team_A=sum(t["team"] == 1 for t in tags),
                          team_NA=sum(t["team"] is None for t in tags), kickoff_halves=sorted(ko)),
                ball_source_share={nm: float(np.mean(ball["source"][graded] == k)) for k, nm in enumerate(BF.SOURCE_NAMES)},
-               decoder=dict(w=model["w"], beta=model["beta"]))
+               decoder=dict(w=model["w"], beta=model["beta"]), feature_mode=a.mode, dedup=a.dedup, train_dir=str(a.deg))
     print(f"validator: {'PASS' if rep['validator_ok'] else 'FAIL'} (exit {vr.returncode}, reason {reason}), rows {rep['rows']}")
     print(f"graded label share: " + ", ".join(f"{k} {100 * v:.1f} %" for k, v in rep["label_share_graded"].items()))
     print(f"predicted possessions (full match): {rep['n_pred_spells']}, mean {rep['mean_spell_s']:.1f} s")

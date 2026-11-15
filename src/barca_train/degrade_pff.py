@@ -44,7 +44,11 @@ LAST_BIN_MAX_S = 60.0
 def load_package_match(path: Path) -> dict:
     with np.load(path) as z:
         d = {k: z[k] for k in z.files}
-    return {k: (v.astype(np.float32) if v.dtype == np.float16 else v) for k, v in d.items()}
+    return load_package_match_dict(d)
+
+
+def load_package_match_dict(d: dict) -> dict:
+    return {k: (v.astype(np.float32) if getattr(v, "dtype", None) == np.float16 else v) for k, v in d.items()}
 
 
 def _resample(d: dict):
@@ -229,6 +233,123 @@ def degrade_ball(bx, by, speed_true, period, rng, gap: dict, lab=None, dead_weig
     return bx, by
 
 
+# ---------------------------------------------------------------- extra slots (step 1c-v2)
+
+REF_LAG_S = 3.0                 # the referee-like path follows the ball with this time constant
+REF_OFFSET_M = (5.0, 12.0)
+
+
+def extra_config(diag: dict, target: float | None = None) -> dict:
+    """From reports/auto/extra_slot_diag.json: the frame share of over-11 frames to reach, the episode-length
+    histograms of (b) wrong team label and (a) extra person, and their mix (the 'other' frames shared in proportion)."""
+    ep = diag["episodes"]
+    fb, fa = ep["b_wrong_label"]["frame_frac"], ep["a_extra_person"]["frame_frac"]
+    return dict(target_frac=float(target if target is not None else ep["any_over11"]["frame_frac"]),
+                share_b=fb / max(fa + fb, 1e-9), b_counts=ep["b_wrong_label"]["counts"], a_counts=ep["a_extra_person"]["counts"])
+
+
+def _team_counts(px, team_sign):
+    pres = np.isfinite(px)
+    return pres[:, team_sign > 0].sum(1), pres[:, team_sign < 0].sum(1)
+
+
+def _referee_path(bx, by, period, rng, fps: float = FPS):
+    """A player-like path that follows play: the true ball (held where missing) smoothed with a REF_LAG_S time constant,
+    plus a fixed random offset of 5-12 m."""
+    x = bx.copy(); y = by.copy()
+    for v in (x, y):
+        ok = np.isfinite(v)
+        if ok.any():
+            i = np.maximum.accumulate(np.where(ok, np.arange(len(v)), 0))
+            v[:] = v[i]
+            v[~ok & (np.arange(len(v)) < np.argmax(ok))] = v[np.argmax(ok)]
+    a = 1.0 / (REF_LAG_S * fps)
+    sx, sy = x.copy(), y.copy()
+    for k in range(1, len(x)):
+        if period[k] != period[k - 1]:
+            continue
+        sx[k] = sx[k - 1] + a * (x[k] - sx[k - 1])
+        sy[k] = sy[k - 1] + a * (y[k] - sy[k - 1])
+    ang, r = rng.uniform(0, 2 * np.pi), rng.uniform(*REF_OFFSET_M)
+    return (sx + r * np.cos(ang)).astype(np.float32), (sy + r * np.sin(ang)).astype(np.float32)
+
+
+def add_extra_slots(m: dict, rng, cfg: dict) -> dict:
+    """Make some team have more than 11 slots on cfg['target_frac'] of the in-period frames, as the match does:
+    (b) wrong team label: a real player's track is moved for an episode into a new slot of the OTHER team (that team
+        gets 12, his own team 10); (a) extra person: a referee-like path is added to a team as a new slot.
+    Episode lengths are drawn from the match's histograms; episodes start only where the receiving team already has
+    at least 11 slots (so each one creates over-11 frames). Seeded by the caller's rng."""
+    m = dict(m)
+    px, py, ts, per = m["px"].copy(), m["py"].copy(), m["team_sign"].copy(), m["period"]
+    n = len(per)
+    inper = per > 0
+    n_in = max(int(inper.sum()), 1)
+    draw = {"a": _bin_sampler(cfg["a_counts"], rng), "b": _bin_sampler(cfg["b_counts"], rng)}
+    ref = None
+    new_x, new_y, new_t = [], [], []
+    nh, na = _team_counts(px, ts)
+    over = inper & ((nh > 11) | (na > 11))
+    cur = int(over.sum())
+    tries = 0
+    while cur / n_in < cfg["target_frac"] and tries < 200000:
+        tries += 1
+        a = int(rng.integers(0, n))
+        if not inper[a]:
+            continue
+        side = 1.0 if rng.random() < 0.5 else -1.0
+        mine = nh if side > 0 else na
+        if mine[a] < 11:
+            continue
+        kind = "b" if rng.random() < cfg["share_b"] else "a"
+        L = max(1, int(round(draw[kind]() * FPS)))
+        b = a + L
+        while b > a and (b > n or per[b - 1] != per[a]):
+            b -= 1
+        if b <= a:
+            continue
+        gx = np.full(n, np.nan, np.float32); gy = np.full(n, np.nan, np.float32)
+        if kind == "b":
+            cand = np.flatnonzero((ts == -side) & np.isfinite(px[a]))
+            if not len(cand):
+                continue
+            j = int(rng.choice(cand))
+            seg = np.isfinite(px[a:b, j])
+            b = a + (int(np.argmin(seg)) if not seg.all() else len(seg))
+            if b <= a:
+                continue
+            gx[a:b], gy[a:b] = px[a:b, j], py[a:b, j]
+            px[a:b, j] = py[a:b, j] = np.nan
+            (na if side > 0 else nh)[a:b] -= 1
+        else:
+            if ref is None:
+                ref = _referee_path(m["ball_true_x"], m["ball_true_y"], per, rng)
+            gx[a:b], gy[a:b] = ref[0][a:b], ref[1][a:b]
+        new_x.append(gx); new_y.append(gy); new_t.append(side)
+        mine[a:b] += 1
+        o2 = inper[a:b] & ((nh[a:b] > 11) | (na[a:b] > 11))
+        cur += int(o2.sum() - over[a:b].sum())
+        over[a:b] = o2
+    if new_x:
+        # pack the new tracks into as few columns as possible (per team, MIN_REUSE frames apart)
+        cols_x, cols_y, cols_t, ends = [], [], [], []
+        for gx, gy, side in sorted(zip(new_x, new_y, new_t), key=lambda z: int(np.argmax(np.isfinite(z[0])))):
+            fin = np.flatnonzero(np.isfinite(gx))
+            s0, e0 = int(fin[0]), int(fin[-1]) + 1
+            k = next((i for i in range(len(cols_x)) if cols_t[i] == side and ends[i] + MIN_REUSE <= s0), None)
+            if k is None:
+                cols_x.append(np.full(n, np.nan, np.float32)); cols_y.append(np.full(n, np.nan, np.float32))
+                cols_t.append(side); ends.append(0); k = len(cols_x) - 1
+            cols_x[k][s0:e0], cols_y[k][s0:e0] = gx[s0:e0], gy[s0:e0]
+            ends[k] = e0
+        px = np.concatenate([px, np.stack(cols_x, 1)], 1)
+        py = np.concatenate([py, np.stack(cols_y, 1)], 1)
+        ts = np.concatenate([ts, np.array(cols_t, np.float32)])
+    m["px"], m["py"], m["team_sign"] = px, py, ts
+    m["extra_frac"] = np.float32(cur / n_in)
+    return m
+
+
 def rates_from(stats: dict) -> dict:
     s = stats["slots"]
     present_frac = min(max(s["mean_slots_total"] / 22.0, 0.5), 1.0)
@@ -260,7 +381,8 @@ def clean_match(d: dict) -> dict:
     return m
 
 
-def degrade_match(d: dict, stats: dict, seed: int, dead_weight: float = 1.0, m25: dict | None = None) -> dict:
+def degrade_match(d: dict, stats: dict, seed: int, dead_weight: float = 1.0, m25: dict | None = None,
+                  extra: dict | None = None) -> dict:
     m = dict(m25) if m25 is not None else to_25fps(d)
     rng = np.random.default_rng(seed + m["match_id"])
     r = rates_from(stats)
@@ -268,6 +390,8 @@ def degrade_match(d: dict, stats: dict, seed: int, dead_weight: float = 1.0, m25
     m["bx"], m["by"] = degrade_ball(m["ball_true_x"], m["ball_true_y"], m["ball_speed_true"], m["period"], rng, stats["gap"],
                                     lab=m["label_had"], dead_weight=dead_weight)
     m["dead_weight"] = np.float32(dead_weight)
+    if extra:
+        m = add_extra_slots(m, rng, extra)
     return m
 
 
@@ -307,6 +431,7 @@ def main() -> int:
     ap.add_argument("--auto-name", default="degrade_stats.json", help="aggregate summary file in reports/auto ('' = none)")
     ap.add_argument("--dead-weight", type=float, help="fixed dead-ball gap weight (default: calibrated); 1 = no weighting")
     ap.add_argument("--clean", action="store_true", help="no degradation at all (25 fps, same form, true ball)")
+    ap.add_argument("--extra", action="store_true", help="also simulate the match's extra slots (reports/auto/extra_slot_diag.json)")
     a = ap.parse_args()
     t0 = time.time()
     stats = json.loads(Path(a.stats).read_text())
@@ -319,10 +444,13 @@ def main() -> int:
     dw = (float("nan") if a.clean else a.dead_weight if a.dead_weight is not None
           else calibrate_dead_weight(files, stats, a.seed))
     print(f"dead_weight: {dw:g}" + (" (clean: no degradation)" if a.clean else ""))
+    xcfg = extra_config(json.loads((AUTO / "extra_slot_diag.json").read_text())) if a.extra else None
+    if xcfg:
+        print(f"extra slots: target {100 * xcfg['target_frac']:.1f} % of frames, wrong-label share {xcfg['share_b']:.2f}")
     agg_gap, agg_slot, before = [], [], []
     for f in files:
         d = load_package_match(f)
-        m = clean_match(d) if a.clean else degrade_match(d, stats, a.seed, dead_weight=dw)
+        m = clean_match(d) if a.clean else degrade_match(d, stats, a.seed, dead_weight=dw, extra=xcfg)
         before.append(missing_before(~np.isfinite(m["bx"]), m["period"], restarts(m["label_had"], m["period"]),
                                      BEFORE_RESTART_S))
         np.savez_compressed(out / f"{m['match_id']}.npz", **m)
@@ -338,7 +466,7 @@ def main() -> int:
     g["missing_frac_graded"] = float(np.mean([x["missing_frac_graded"] for x in agg_gap]))
     g["missing_frac_all"] = float(np.mean([x["missing_frac_all"] for x in agg_gap]))
     s = {k: float(np.mean([x[k] for x in agg_slot])) for k in agg_slot[0]}
-    deg = dict(gap=g, slots=s, missing_before_restart=float(np.nanmean(before)), dead_weight=dw)
+    deg = dict(gap=g, slots=s, missing_before_restart=float(np.nanmean(before)), dead_weight=dw, extra=xcfg)
     print("\n== degraded PFF (all matches)")
     print(f"ball missing before restarts: {100 * deg['missing_before_restart']:.1f} % "
           f"(match, before SET PIECES tags: {100 * stats.get('missing_before_set_piece', float('nan')):.1f} %)")

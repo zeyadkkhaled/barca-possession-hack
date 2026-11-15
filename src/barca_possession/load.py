@@ -194,6 +194,117 @@ def ball_misc(period, bx, by, b3) -> dict:
                                  p95=float(np.percentile(v, 95)) if len(v) else None))
 
 
+# ---------------------------------------------------------------- duplicate slots (step 1c)
+
+DUP_MAX_TEAM = 11          # the rule only acts on frames where a team has more slots than this
+DUP_MAX_DIST_M = 0.5
+DUP_MAX_DV_MPS = 1.0
+
+
+def slot_velocity(p: np.ndarray, period: np.ndarray, fps: float = FPS) -> np.ndarray:
+    """Per slot, central difference where both neighbours exist in the same period, else one-sided, else NaN."""
+    p = np.asarray(p, np.float64)
+    same = (period[1:] == period[:-1])[:, None]
+    fwd = np.full_like(p, np.nan)
+    fwd[:-1] = np.where(same, (p[1:] - p[:-1]) * fps, np.nan)
+    bwd = np.full_like(p, np.nan)
+    bwd[1:] = fwd[:-1]
+    cen = (fwd + bwd) / 2
+    return np.where(np.isfinite(cen), cen, np.where(np.isfinite(fwd), fwd, bwd))
+
+
+def segment_length(pres: np.ndarray) -> np.ndarray:
+    """Per frame and slot: the length (frames) of the presence run containing that frame (0 where absent)."""
+    out = np.zeros(pres.shape, np.int32)
+    for s in range(pres.shape[1]):
+        for a, b in runs(pres[:, s]):
+            out[a:b, s] = b - a
+    return out
+
+
+def remove_duplicates(px, py, team_sign, period, max_team: int = DUP_MAX_TEAM, max_dist: float = DUP_MAX_DIST_M,
+                      max_dv: float = DUP_MAX_DV_MPS, fps: float = FPS):
+    """Merge duplicate same-team slots: only in frames where the team has more than max_team slots, a pair closer than
+    max_dist with velocities differing by less than max_dv is merged by dropping the slot whose presence run is shorter
+    (ties: the higher slot index). Closest pairs first, until the team is back to max_team. Returns (px, py, dropped)."""
+    px, py = np.array(px, np.float32, copy=True), np.array(py, np.float32, copy=True)
+    pres = np.isfinite(px)
+    vx, vy = slot_velocity(px, period, fps), slot_velocity(py, period, fps)
+    seg = segment_length(pres)
+    dropped = np.zeros(px.shape, bool)
+    for side in (1.0, -1.0):
+        cols = np.flatnonzero(team_sign == side)
+        cnt = pres[:, cols].sum(1)
+        for f in np.flatnonzero(cnt > max_team):
+            c = cols[pres[f, cols]]
+            i, j = np.triu_indices(len(c), 1)
+            a, b = c[i], c[j]
+            d = np.hypot(px[f, a] - px[f, b], py[f, a] - py[f, b])
+            dv = np.hypot(vx[f, a] - vx[f, b], vy[f, a] - vy[f, b])
+            ok = (d < max_dist) & (dv < max_dv)                     # NaN velocity -> never merged
+            if not ok.any():
+                continue
+            n_on, gone = len(c), set()
+            for k in np.flatnonzero(ok)[np.argsort(d[ok], kind="stable")]:
+                if n_on <= max_team:
+                    break
+                sa, sb = int(a[k]), int(b[k])
+                if sa in gone or sb in gone:
+                    continue
+                drop = sa if seg[f, sa] < seg[f, sb] else sb
+                gone.add(drop); dropped[f, drop] = True; n_on -= 1
+    px[dropped], py[dropped] = np.nan, np.nan
+    return px, py, dropped
+
+
+def trim_to_11(px, py, team_sign, period, max_team: int = DUP_MAX_TEAM):
+    """Option B: in every frame where a team has more than max_team slots, drop that team's most recently born slots
+    (latest start of the current presence run; ties: the higher slot index) until max_team remain. Returns
+    (px, py, dropped)."""
+    px, py = np.array(px, np.float32, copy=True), np.array(py, np.float32, copy=True)
+    pres = np.isfinite(px)
+    born = np.full(px.shape, -1, np.int64)
+    for s in range(px.shape[1]):
+        for a, b in runs(pres[:, s]):
+            born[a:b, s] = a
+    dropped = np.zeros(px.shape, bool)
+    for side in (1.0, -1.0):
+        cols = np.flatnonzero(team_sign == side)
+        cnt = pres[:, cols].sum(1)
+        for f in np.flatnonzero(cnt > max_team):
+            c = cols[pres[f, cols]]
+            order = np.lexsort((-c, -born[f, c]))               # newest first, then higher index
+            dropped[f, c[order[:len(c) - max_team]]] = True
+    px[dropped], py[dropped] = np.nan, np.nan
+    return px, py, dropped
+
+
+def team_over(px, team_sign, period, max_team: int = DUP_MAX_TEAM) -> float:
+    """Share of graded frames where a team has more than max_team slots."""
+    g = period > 0
+    pres = np.isfinite(px[g])
+    return float(((pres[:, team_sign > 0].sum(1) > max_team) | (pres[:, team_sign < 0].sum(1) > max_team)).mean())
+
+
+def dup_stats(px, py, team_sign, period, fps: float = FPS) -> dict:
+    """Before / after the removal, and the presence-run lengths of the dropped slots (the ghost lengths degrade_pff
+    copies), binned like the ball gaps."""
+    nx, _, dropped = remove_duplicates(px, py, team_sign, period, fps=fps)
+    lens = []
+    for s in np.flatnonzero(dropped.any(0)):
+        for a, b in runs(np.isfinite(px[:, s])):
+            if dropped[a:b, s].any():
+                lens.append((b - a) / fps)
+    c, _ = np.histogram(lens, bins=np.array(GAP_EDGES_S))
+    g = period > 0
+    return dict(over11_before=team_over(px, team_sign, period), over11_after=team_over(nx, team_sign, period),
+                dropped_slot_frames_frac=float(dropped[g].sum() / max(np.isfinite(px[g]).sum(), 1)),
+                frames_with_drop_frac=float(dropped[g].any(1).mean()),
+                dropped_segment_s=dict(bins=list(GAP_BIN_NAMES), counts=c.tolist(),
+                                       median=float(np.median(lens)) if lens else None, n=len(lens)),
+                rule=dict(max_team=DUP_MAX_TEAM, max_dist_m=DUP_MAX_DIST_M, max_dv_mps=DUP_MAX_DV_MPS))
+
+
 def all_stats(m: dict) -> dict:
     hw = m["pitch"][1] / 2
     return dict(source="metrica tactical", gap=gap_stats(m["t"], m["period"], m["bx"], m["by"], hw),
@@ -273,6 +384,12 @@ def main() -> int:
     st["n_set_piece_tags"] = len(tags)
     print(f"ball missing in the {BEFORE_TAG_S} s window before SET PIECES tags: "
           f"{100 * st['missing_before_set_piece']:.1f} % ({len(tags)} tags)")
+    st["dup"] = dup_stats(m["px"], m["py"], m["team_sign"], m["period"])
+    du = st["dup"]
+    print(f"duplicate slots: graded frames with a team > 11: {100 * du['over11_before']:.1f} % before the removal, "
+          f"{100 * du['over11_after']:.1f} % after; frames with a merge {100 * du['frames_with_drop_frac']:.1f} %; "
+          f"dropped slot-frames {100 * du['dropped_slot_frames_frac']:.2f} %; dropped segments {du['dropped_segment_s']['n']}, "
+          f"median {du['dropped_segment_s']['median']} s, by length {dict(zip(GAP_BIN_NAMES, du['dropped_segment_s']['counts']))}")
     st["orientation"] = {str(k): v for k, v in m["flip"].items()}
     st["bad_lines"] = m["bad_lines"]
     side = {f"half {k}": ("home was on +x -> flipped" if v["flipped"] else "home on -x (attacks +x) -> kept")

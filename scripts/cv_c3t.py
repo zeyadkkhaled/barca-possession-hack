@@ -29,14 +29,17 @@ FILL = OUT / "ballfill"
 VARIANTS = {"none": (), **{f"only {r}": (r,) for r in PR.RULES}, "all": PR.RULES}
 
 
-def _set_dirs(deg, fill):
-    global DEG, FILL
-    DEG, FILL = deg, fill
+PREP = ("current", False)       # (feature mode, dedup)
+
+
+def _set_dirs(deg, fill, prep=("current", False)):
+    global DEG, FILL, PREP
+    DEG, FILL, PREP = deg, fill, prep
 
 
 def load_match(mid):
     with np.load(DEG / f"{mid}.npz") as z:
-        m = {k: z[k] for k in z.files}
+        m = T.prepare_players({k: z[k] for k in z.files}, PREP[0], dedup=PREP[1])
     with np.load(FILL / f"{mid}.npz") as z:
         b = {k: z[k] for k in z.files}
     return m, b
@@ -45,7 +48,7 @@ def load_match(mid):
 def job_features(args):
     mid, seed = args
     m, b = load_match(mid)
-    rows, X, names = T.features(m, b)
+    rows, X, names = T.features(m, b, mode=PREP[0])
     gt, gmask = m["label_had"], m["label_mask"]
     tags = PR.simulate_tags(gt, m["period"], m["ball_true_y"], float(m["pitch"][1]) / 2, np.random.default_rng(seed + mid))
     ctx = PL.context(m, b, tags=tags)
@@ -62,8 +65,11 @@ def main() -> int:
     ap.add_argument("--out-name", default="cv_c3t.json")
     ap.add_argument("--deg", default=str(DEG), help="PFF matches in the Metrica form")
     ap.add_argument("--fill", default=str(FILL), help="their ball fills")
+    ap.add_argument("--mode", default="current", choices=("current", "robust", "trim11"),
+                    help="features: current / robust (option A) / trim11 (option B)")
+    ap.add_argument("--dedup", action="store_true", help="apply the duplicate rule (load.remove_duplicates)")
     a = ap.parse_args()
-    dirs = (Path(a.deg), Path(a.fill))
+    dirs = (Path(a.deg), Path(a.fill), (a.mode, a.dedup))
     _set_dirs(*dirs)
     t0 = time.time()
     folds = json.loads((PFF_PACKAGE / "folds.json").read_text())["folds"]
@@ -75,6 +81,7 @@ def main() -> int:
           flush=True)
     res = {"folds": [], "variants": list(VARIANTS)}
     per_match = {v: [] for v in VARIANTS}
+    extra_all = []
     raws = {v: [] for v in VARIANTS}
     for k in (a.folds if a.folds is not None else range(len(folds))):
         test = [m for m in folds[k] if m in F]
@@ -84,9 +91,11 @@ def main() -> int:
         fr = dict(fold=k, w=model["w"], beta=model["beta"], inner_spell=model["inner_spell"], n_test=len(test))
         sc = {v: [] for v in VARIANTS}
         rw = {v: [] for v in VARIANTS}
+        ex = []
         for m in test:
             f = F[m]
             pred = PL.predict(model, f)
+            ex.append(PL.extra_metrics(f["gt"], f["gmask"], f["period"], pred))
             for v, rules in VARIANTS.items():
                 p = PR.apply(pred, f["ctx"], rules) if rules else pred
                 s = PL.score_hda(f["gt"], f["gmask"], f["period"], p)
@@ -95,11 +104,15 @@ def main() -> int:
             arr = np.array(sc[v])
             fr[v] = dict(spell=float(arr[:, 0].mean()), macro=float(arr[:, 1].mean()), pooled=PL.pooled(rw[v]))
             per_match[v] += sc[v]; raws[v] += rw[v]
+        fr["extra"] = PL.merge_extra(ex)
+        extra_all += ex
         res["folds"].append(fr)
         print(f"  fold {k}: spellF1 {fr['none']['spell']:.4f} / macroF1 {fr['none']['macro']:.4f} without post-rules; "
               f"{fr['all']['spell']:.4f} / {fr['all']['macro']:.4f} with all ({time.time() - t0:.0f} s)", flush=True)
     res["mean"] = {v: dict(spell=float(np.mean([x[0] for x in per_match[v]])), macro=float(np.mean([x[1] for x in per_match[v]])),
                            pooled=PL.pooled(raws[v]), n_matches=len(per_match[v])) for v in VARIANTS}
+    res["extra"] = PL.merge_extra(extra_all)
+    res["mode"], res["dedup"], res["deg"] = a.mode, a.dedup, str(a.deg)
     base = res["mean"]["none"]
     res["rule_delta"] = {r: dict(spell=res["mean"][f"only {r}"]["spell"] - base["spell"],
                                  macro=res["mean"][f"only {r}"]["macro"] - base["macro"]) for r in PR.RULES}
@@ -114,6 +127,9 @@ def main() -> int:
     for r, dv in res["rule_delta"].items():
         print(f"  {r:14s} spellF1 {dv['spell']:+.4f}  macroF1 {dv['macro']:+.4f}")
     print(f"rules kept for the submission (spellF1 gain > 0): {res['rules_kept']}")
+    e = res["extra"]
+    print(f"mode {a.mode}, dedup {a.dedup}: restart-team accuracy {e['restart_team_acc']:.3f} (matched {e['restart_matched_share']:.3f}), "
+          f"short-spell (<2 s) recall {e['short_spell_recall']:.3f}")
     AUTO.mkdir(parents=True, exist_ok=True)
     (AUTO / a.out_name).write_text(json.dumps(res, indent=1))
     print(f"done in {time.time() - t0:.0f} s")

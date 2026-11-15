@@ -1,0 +1,44 @@
+{
+ "clean": {
+  "spell_mean": 0.5837042884951554,
+  "macro_mean": 0.8892172765268761,
+  "pooled": {
+   "spell": 0.5828870779976717,
+   "macro": 0.8949539409002673
+  },
+  "extra": {
+   "restart_team_acc": 0.9554140127388535,
+   "restart_matched_share": 0.7476190476190476,
+   "short_spell_recall": 0.10723860589812333,
+   "restarts": 420,
+   "restarts_matched": 314,
+   "restarts_team_ok": 300,
+   "short_spells": 373,
+   "short_matched": 40
+  },
+  "n_matches": 6
+ },
+ "degraded": {
+  "spell_mean": 0.5535589709770883,
+  "macro_mean": 0.8788809101258637,
+  "pooled": {
+   "spell": 0.5536197763390229,
+   "macro": 0.8847151504103401
+  },
+  "extra": {
+   "restart_team_acc": 0.9455782312925171,
+   "restart_matched_share": 0.7,
+   "short_spell_recall": 0.09115281501340483,
+   "restarts": 420,
+   "restarts_matched": 294,
+   "restarts_team_ok": 278,
+   "short_spells": 373,
+   "short_matched": 34
+  },
+  "n_matches": 6
+ },
+ "model": {
+  "feature_mode": "current",
+  "extra_slots": null
+ }
+}

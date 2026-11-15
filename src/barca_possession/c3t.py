@@ -60,7 +60,30 @@ def prepare(m: dict, ball: dict) -> Prepared:
     return P
 
 
-def team_features(P: Prepared, ball: dict, f: np.ndarray):
+def prepare_players(m: dict, mode: str = "current", dedup: bool = False) -> dict:
+    """Player-slot clean-up before any feature (ball fill included): dedup applies the duplicate rule
+    (load.remove_duplicates); mode "trim11" (option B) then trims each team back to 11 slots per frame."""
+    from .load import remove_duplicates, trim_to_11
+    m = dict(m)
+    if dedup:
+        m["px"], m["py"], _ = remove_duplicates(m["px"], m["py"], m["team_sign"], m["period"])
+    if mode == "trim11":
+        m["px"], m["py"], _ = trim_to_11(m["px"], m["py"], m["team_sign"], m["period"])
+    return m
+
+
+def _shape(X, Y, side, robust: bool):
+    """Team centre and spread: mean / std, or (robust) median and the interquartile range / 1.349 (an sd for normal data
+    that one extra slot can hardly move); min / max become the 10th / 90th percentiles."""
+    x, y = X[:, side], Y[:, side]
+    if not robust:
+        return np.nanmean(x, 1), np.nanmean(y, 1), np.nanstd(x, 1), np.nanstd(y, 1), np.nanmin(x, 1), np.nanmax(x, 1)
+    qx = np.nanpercentile(x, (10, 25, 50, 75, 90), axis=1)
+    qy = np.nanpercentile(y, (25, 50, 75), axis=1)
+    return qx[2], qy[1], (qx[3] - qx[1]) / 1.349, (qy[2] - qy[0]) / 1.349, qx[0], qx[4]
+
+
+def team_features(P: Prepared, ball: dict, f: np.ndarray, robust: bool = False):
     cols, names = [], []
 
     def add(nm, v):
@@ -86,12 +109,14 @@ def team_features(P: Prepared, ball: dict, f: np.ndarray):
         add(f"proj{dt:g}_dh_minus_da", np.where(np.isfinite(h_ - a_), h_ - a_, np.nan))
     X, Y = P.px[f], P.py[f]
     for side, nm in ((home, "home"), (~home, "away")):
-        add(f"{nm}_cx", np.nanmean(X[:, side], 1)); add(f"{nm}_cy", np.nanmean(Y[:, side], 1))
-        add(f"{nm}_sdx", np.nanstd(X[:, side], 1)); add(f"{nm}_sdy", np.nanstd(Y[:, side], 1))
-        add(f"{nm}_minx", np.nanmin(X[:, side], 1)); add(f"{nm}_maxx", np.nanmax(X[:, side], 1))
+        cx, cy, sdx, sdy, mnx, mxx = _shape(X, Y, side, robust)
+        add(f"{nm}_cx", cx); add(f"{nm}_cy", cy)
+        add(f"{nm}_sdx", sdx); add(f"{nm}_sdy", sdy)
+        add(f"{nm}_minx", mnx); add(f"{nm}_maxx", mxx)
         add(f"{nm}_n", np.isfinite(X[:, side]).sum(1))
-        add(f"{nm}_speed", np.nanmean(P.sp[f][:, side], 1))
-        add(f"{nm}_cvx", np.nanmean(P.vxp[f][:, side], 1))
+        agg = np.nanmedian if robust else np.nanmean
+        add(f"{nm}_speed", agg(P.sp[f][:, side], 1))
+        add(f"{nm}_cvx", agg(P.vxp[f][:, side], 1))
     add("home_n_opp_half", np.sum(X[:, home] > 0, 1)); add("away_n_opp_half", np.sum(X[:, ~home] < 0, 1))
     add("cx_diff", cols[names.index("home_cx")] - cols[names.index("away_cx")])
     add("cvx_diff", cols[names.index("home_cvx")] - cols[names.index("away_cvx")])
@@ -102,12 +127,12 @@ def team_features(P: Prepared, ball: dict, f: np.ndarray):
     return np.stack(cols, 1), names
 
 
-def features(m: dict, ball: dict):
-    """(rows, X, names) for one match."""
+def features(m: dict, ball: dict, mode: str = "current"):
+    """(rows, X, names) for one match. mode: "current" (step 1), "robust" (option A: median / trimmed team shape)."""
     rows = rows_of(m["period"])
     P = prepare(m, ball)
     Xb, nb, *_ = base_features(P, rows)
-    Xt, nt = team_features(P, ball, rows)
+    Xt, nt = team_features(P, ball, rows, robust=(mode == "robust"))
     return rows, np.concatenate([Xb, Xt], 1), nb + nt
 
 
