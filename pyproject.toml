@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68,<83"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "barca-possession-hack"
+version = "0.0.1"
+description = "More than a Hack 2027 (Metrica Sports x FC Barcelona) possession challenge - components imported from M1, not yet adapted"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+# Pinned to the versions installed in the M1 venv (Python 3.13.0). The official scorer needs only numpy + pandas.
+dependencies = ["numpy==2.5.4", "pandas==3.0.6"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+c3 = ["lightgbm==4.7.0", "optuna==5.0.0", "scipy==1.18.1", "scikit-learn==1.9.1"]
+# PathCRF runs on the HPC (see hpc/env/setup_env.sh); torch is not installed in the laptop venv.
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"

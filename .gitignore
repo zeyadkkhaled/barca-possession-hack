@@ -1,0 +1,40 @@
+# --- data: never committed (hackathon data is licensed for the competition only; no PFF data here either) ---
+data/*
+!data/README.md
+*.mp4
+*.npz
+*.parquet
+*.pkl
+*.gzip
+*.bz2
+*_atd.txt
+*_atd.xml
+*_homography.csv
+*_smart_tagging.xml
+# full-match ground truth / submissions are label sets for the whole match
+*_possession_gt.csv
+submissions/
+outputs/
+
+# --- the official repo is a git submodule; anything it downloads stays inside it and is ignored by its own .gitignore ---
+
+# --- model weights ---
+models/*
+!models/README.md
+*.pt
+*.pth
+*.ckpt
+vendor/pathcrf/saved/**/model
+
+# --- envs and caches ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.pytest-tmp*/
+.ipynb_checkpoints/
+.idea/
+.vscode/
+.DS_Store
