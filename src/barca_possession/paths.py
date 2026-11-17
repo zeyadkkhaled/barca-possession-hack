@@ -10,7 +10,7 @@ REF = ROOT / "reference" / "more-than-a-hack-2027"
 OUT = Path(os.environ.get("BARCA_OUT", ROOT / "outputs"))        # git-ignored; data-derived files (never shown to an assistant)
 AUTO = Path(os.environ.get("BARCA_AUTO", ROOT / "reports" / "auto"))   # aggregate numbers only, read by make_step1_report.py
 MODELS = Path(os.environ.get("BARCA_MODELS", ROOT / "models"))
-PFF_PACKAGE = Path(os.environ.get("M1_HPC_PACKAGE", r"D:\m1_tmp\hpc\m1_hpc_v1"))   # M1 HPC package (30 learning matches)
+PFF_PACKAGE = Path(os.environ.get("M1_HPC_PACKAGE", "scratch/m1_hpc_v1"))   # M1 HPC package (30 learning matches)
 FPS = 25.0
 PITCH = (105.3, 68.0)                         # games.py, measured from the corrected tracking
 

@@ -26,7 +26,6 @@ models/*
 *.pt
 *.pth
 *.ckpt
-vendor/pathcrf/saved/**/model
 
 # --- envs and caches ---
 .venv/

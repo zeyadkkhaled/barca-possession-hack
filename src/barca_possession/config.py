@@ -58,7 +58,7 @@ class SmootherConfig:
 
 # Scratch space for long runs (one place). C: is nearly full, so TEMP / TMP, joblib's temp folder, LightGBM / numpy
 # temporary files and any Optuna storage go to M1_TMP (override with the M1_TMP environment variable).
-M1_TMP_DEFAULT = r"D:\m1_tmp"
+M1_TMP_DEFAULT = "scratch"
 
 
 def use_scratch() -> str:

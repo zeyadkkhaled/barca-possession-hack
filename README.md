@@ -1,101 +1,116 @@
-# barca-possession-hack
+# Visca Barca – More than a Hack 2027: ball possession
 
-Our entry for **More than a Hack 2027, Phase 1: ball possession** (Metrica Sports × FC Barcelona × MWCapital). The task
-is one label per frame of FC Barcelona vs Athletic Club: H (home), A (away), D (dead ball) or X (no answer). It is ranked
-on possession-spell F1. Rules summary: [docs/HACKATHON_RULES.md](docs/HACKATHON_RULES.md). Official repo:
-<https://github.com/metrica-sports/more-than-a-hack-2027>.
+Our entry for **More than a Hack 2027, Phase 1: ball possession** (Metrica Sports × FC Barcelona × MWCapital).
 
-## Status (2026-11-16)
+- **Task:** one label per frame of FC Barcelona vs Athletic Club: H (home), A (away), D (dead ball) or X (no answer).
+- **Model:** C3-T, a team-level two-layer LightGBM with a 3-state Viterbi decoder.
+- **Training data:** PFF FC World Cup 2022 tracking, degraded to look like Metrica's automatic tracking. The hackathon
+  match is never used for training.
 
-- **Submitted model:** C3-T, team-level LightGBM plus a 3-state Viterbi, trained on PFF World Cup 2022 degraded to look
-  like Metrica's tracking. Method and results: [docs/technical.md](docs/technical.md).
-- **Reproduce the submission (one command, no training):**
+**Team:** Zeyad Khaled, Ahmed Hassan. **With thanks to** Omar Essam.
 
-  ```powershell
-  .\.venv\Scripts\python.exe run.py            # -> outputs/submission.csv, then the official validator
-  ```
+Method, data and evaluation in detail: [docs/technical.md](docs/technical.md).
 
-  It reads the hackathon data (`data/` or `MTAH_DATA_DIR`) and the saved models in `models/c3/` and `models/bfp/`. It
-  is deterministic: two runs and `outputs/submission_c3.csv` give the same sha256.
-- **Step 2 (PathCRF, in progress):**
-  - re-linking: `barca_possession.relink`;
-  - the adapter at 25 fps: `pathcrf_adapter`;
-  - the HPC cycle: [hpc/step2/HPC_STEP2.md](hpc/step2/HPC_STEP2.md).
-- Where the M1 code came from: [docs/PROVENANCE.md](docs/PROVENANCE.md).
+## Pipeline
 
-## Step 1 pipeline (C3-T, written 2026-11-15)
-
-Team-level C3 trained on PFF degraded to look like the Metrica tracking. The commands, in order, are in
-[reports/step1_report.md](reports/step1_report.md). `fit_predict.py` regenerates `outputs/submission_c3.csv`
-deterministically: LightGBM `deterministic=True`, fixed seed, `--threads 1`.
-
-- `barca_possession.load`: the hackathon loader and noise statistics.
-- `barca_train.degrade_pff`: PFF → Metrica form.
-- `barca_possession.ballfill`: smoother plus ball-from-players.
-- `barca_possession.c3t`: features, two layers, 3-state Viterbi.
-- `barca_possession.postrules`: the post-rules.
-- `barca_train.pipeline`: scoring and fold training.
-
-Scripts in `scripts/` print aggregate numbers only. Data-derived files go to `outputs/` (git-ignored). Aggregate
-summaries go to `reports/auto/`.
-
-## Layout
-
-```
-reference/more-than-a-hack-2027/  official repo (git submodule, read-only): scorer, validator, starter code, public 5-min GT
-src/barca_possession/             tag-free possession code from M1: ball smoother, C0-C2 baselines/rules, C3 features,
-                                  decoder and post-processing, ball-from-players, gap fills, scratch-dir helper
-src/barca_labels/                 M1 labels v2 builder (PFF events) and our scorer (score_had = H/A/D macroF1 + spellF1)
-src/pathcrf_adapter/              PathCRF for the hackathon: build (degraded + relinked PFF, on the HPC), adapter (25 fps lanes),
-                                  model + travelling/loose head, train / predict, C3-T fold model, scorer, cycle bookkeeping
-vendor/pathcrf/                   PathCRF (MPL-2.0), vendored unchanged
-scripts/c3/                       M1 C3 training / evaluation pipelines (round 1-5, incl. the restart detector in c3v4.py)
-scripts/check_scorer_parity.py    our scorer vs the official one on the public GT + baselines + synthetic cases
-hpc/step2/                        step-2b HPC cycle: run_step2.sh, jobs/, env/, build_zip.py, HPC_STEP2.md
-hpc/                              (the rest) M1's HPC bundle as copied: Slurm jobs, run_cycle.sh, tools/ (package export)
-run.py                            one command: raw data + saved models -> outputs/submission.csv
-models/README.md                  where the trained models live (no weights in git)
-data/                             EMPTY, git-ignored: hackathon data goes here (never committed)
-tests/                            the copied M1 unit tests
-docs/                             HACKATHON_RULES, PROVENANCE, HANDOFF_FOR_PLANNING
+```mermaid
+flowchart LR
+    A[Metrica tracking<br/>25 fps, anonymous slots] --> B[slot clean-up<br/>duplicate rule]
+    B --> C[ball: smoother +<br/>ball-from-players LightGBM]
+    C --> D[team-level features<br/>every 5th frame]
+    D --> E[layer 1: P dead]
+    D --> F[layer 2: P home given alive]
+    E --> G[3-state Viterbi<br/>H / A / D]
+    F --> G
+    G --> H[one label per frame<br/>+ official validator]
 ```
 
-## Setup (Windows, PowerShell)
+Training follows the same path on PFF World Cup 2022. The PFF tracking is first degraded with rates measured on the
+hackathon match: 25 fps, broken and swapped slots, a missing ball and extra slots.
 
-Python 3.13 (the same as the M1 venv). Packages are pinned to M1's versions.
+## Results
 
-```powershell
-git clone --recurse-submodules <this repo> ; cd barca-possession-hack   # or: git submodule update --init
-& "C:\Program Files\Python313\python.exe" -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --no-cache-dir -e ".[dev,c3]"
-.\.venv\Scripts\python.exe -m pytest
+spellF1 is the competition metric and macroF1 is the tie-break. Both are means per match, from our scorer, which equals
+the official one when the prediction has no X (`scripts/check_scorer_parity.py`).
+
+| evaluation | input | spellF1 | macroF1 |
+|---|---|---|---|
+| 5-fold CV, 30 PFF learning matches | clean | 0.645 | 0.912 |
+| 5-fold CV, 30 PFF learning matches | degraded | 0.615 | 0.902 |
+| 6 PFF stress matches, never trained on | clean | 0.584 | 0.889 |
+| 6 PFF stress matches, never trained on | degraded | 0.554 | 0.879 |
+| 16 locked PFF test matches, run once at the end | degraded | 0.617 (95% CI 0.598–0.636) | 0.902 |
+| 16 locked PFF test matches, run once at the end | clean | 0.644 (95% CI 0.624–0.665) | 0.911 |
+| hackathon match, public 5 minutes, official scorer (a check only, never used to choose) | real | 0.539 | 0.908 |
+| official `baseline_smooth125`, same 5 minutes | real | 0.424 | 0.581 |
+
+## Reproduce the submission
+
+1. **Clone** with the official repo as a submodule. It provides the readers and the validator.
+
+   ```bash
+   git clone --recurse-submodules https://github.com/zeyadkkhaled/barca-possession-hack.git
+   cd barca-possession-hack
+   ```
+
+2. **Install** into Python 3.13:
+
+   ```bash
+   python -m venv .venv
+   .venv/Scripts/python -m pip install -r requirements.txt     # Linux / macOS: .venv/bin/python
+   ```
+
+3. **Data path:** put the hackathon bundle in `data/` with the layout of `reference/more-than-a-hack-2027/DATA.md`, or
+   set `MTAH_DATA_DIR` to its folder.
+
+4. **Run:**
+
+   ```bash
+   python run.py --out outputs/submission_c3.csv
+   ```
+
+   - It writes `outputs/submission_c3.csv` (199,319 rows) and runs the official validator.
+   - It does no training: it uses the committed models in `models/c3/` and `models/bfp/`.
+   - Expected sha256: `8612514a69e9c58045ab5c0ccdad20808aa48bdfd45d0566f8389eb43defa8c5`.
+   - It takes about 30 s on a laptop CPU, with a peak of 0.6 GB RAM.
+   - It is deterministic: LightGBM prediction on CPU.
+
+Tests: `python -m pytest`. On Windows, set `PYTHONUTF8=1`.
+
+## Repository layout
+
+```
+run.py                       one command: hackathon data + committed models -> submission CSV + validator
+models/c3, models/bfp        the frozen C3-T and ball-from-players LightGBM models (text files)
+src/barca_possession/        loader and noise statistics, ball smoother + ball fill, C3-T features / layers / decoder,
+                             post-rules, splits, the earlier C0-C3 rule-based and per-player baselines
+src/barca_train/             PFF degradation (degrade_pff), training / scoring pipeline, stress-match loader
+src/barca_labels/            PFF answer key (labels v2) and the H/A/D scorer
+scripts/                     training, CV and evaluation (aggregate numbers only):
+                             cv_c3t.py, fit_predict.py, ballfill_eval.py, stress_eval.py, locked_test.py,
+                             extra_slot_diag.py, check_scorer_parity.py; data/ builds the PFF packages
+reports/auto/                aggregate results (JSON) behind every number in this README
+docs/                        technical.md, HACKATHON_RULES.md, PROVENANCE.md, dev_log/ (step reports, locked-test log)
+reference/more-than-a-hack-2027/   the official repo (git submodule): readers, scorer, validator, public 5-min GT
+tests/                       unit tests
+data/, outputs/              git-ignored: hackathon data and generated files are never committed
 ```
 
-PathCRF (torch) runs on the HPC only; see [hpc/step2/HPC_STEP2.md](hpc/step2/HPC_STEP2.md). On Windows set `PYTHONUTF8=1`.
+## Training data
 
-## Official scorer
+The training data is the **PFF FC FIFA World Cup 2022** dataset (tracking, events, rosters), which PFF FC released free.
+- We built the answer key (labels v2) from PFF's events with the code in `src/barca_labels/`.
+- The 64 matches are split into 30 learning matches (5 folds), 16 locked test matches and 18 stress matches (6 used as
+  an outside check).
+- No PFF data is in this repository.
 
-```powershell
-# score every CSV in reference/.../evaluation/results against the public 5-minute GT
-.\.venv\Scripts\python.exe reference\more-than-a-hack-2027\evaluation\run_evaluation.py --out outputs\scorer
-# score our own folder of submissions
-.\.venv\Scripts\python.exe reference\more-than-a-hack-2027\evaluation\run_evaluation.py --results submissions --out outputs\scorer
-# check a file before submitting it (the same checks the official scorer runs)
-.\.venv\Scripts\python.exe reference\more-than-a-hack-2027\evaluation\validate_submission.py submissions\<team>.csv
-# our scorer vs theirs
-.\.venv\Scripts\python.exe scripts\check_scorer_parity.py
-```
+The way to obtain the data and how the training is run are in [docs/technical.md](docs/technical.md).
 
-The public 5 minutes are only for checking the pipeline. The rules forbid training or tuning on them.
+## Licence and credits
 
-## Hackathon obligations for this repo
-
-- **The repo must regenerate the submission CSV**: exactly the same file, from the provided data, with one documented
-  command (`python run.py`). It must have pinned dependencies and install instructions.
-  - *Open:* `models/` is git-ignored, so the small LightGBM text models that `run.py` needs (`models/c3`, `models/bfp`,
-    about 10 MB, trained on degraded PFF only) are not in git yet. They must be shipped or hosted before submission.
-- **It must be public at submission time.** It is private for now. Before making it public, check that no data, derived
-  frame-level exports, PFF data or unlicensed weights are in the history. `.gitignore` excludes `data/`, `*.npz`,
-  `*.parquet`, `*.pt`, `models/*` and video.
-- Match data must never be committed, and no extract of it may go to a hosted LLM (competition T&Cs).
-- Deadline: **17 November 2026** (no time zone is stated in the official repo).
+- Code: MIT, see [LICENSE](LICENSE). Copyright Visca Barca 2026.
+- **Hackathon data:** Metrica Sports and the Barça Innovation Hub, licensed for the competition only. It is not included.
+- **PFF FC:** the World Cup 2022 tracking and event data used for training. It is not included.
+- **kloppy:** the open-source library the official data guide uses for Metrica's EPTS format.
+- **LightGBM:** the gradient-boosting library for every model here.
+- **The official More than a Hack 2027 repository:** readers, scorer and validator (submodule, its own licence).

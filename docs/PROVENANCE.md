@@ -1,13 +1,16 @@
 # Provenance of copied files
 
+> On `main`, the PathCRF and HPC files listed below (`vendor/pathcrf/`, `hpc/`, `pathcrf_adapter`) were removed after the
+> submission was frozen. They are kept on the `dev-history` branch.
+
 Everything below was **copied** (the originals were not moved or edited) on 2026-11-15.
 
-- **M1 source:** `Z:\GP\Task 2 - match sim` (branch `m1-possession`), commit `7e86074c29e74ea884037a86f6d00ab528188307`. Every copied M1 file was clean at that commit: `git status` showed only the untracked `.pytest-tmp-codex/` and `Ultralytics/`.
-- **PathCRF source:** `D:\m1_tmp\ext\pathcrf`, a clone of <https://github.com/hyunsungkim-ds/pathcrf>, commit `1b7c6f85a6b78c92e4543fde72ca2b86a933f997`. It is vendored unchanged with its MPL-2.0 `LICENSE`, using the same file list as M1's `build_bundle.py`.
+- **M1 source:** `<M1 repo>` (branch `m1-possession`), commit `7e86074c29e74ea884037a86f6d00ab528188307`. Every copied M1 file was clean at that commit: `git status` showed only the untracked `.pytest-tmp-codex/` and `Ultralytics/`.
+- **PathCRF source:** `<scratch>\ext\pathcrf`, a clone of <https://github.com/hyunsungkim-ds/pathcrf>, commit `1b7c6f85a6b78c92e4543fde72ca2b86a933f997`. It is vendored unchanged with its MPL-2.0 `LICENSE`, using the same file list as M1's `build_bundle.py`.
 - **Edits:** import lines only. The packages were renamed `m1_possession` → `barca_possession`, `m1_labels` → `barca_labels` and `m1pc` → `pathcrf_adapter`. There were three other edits:
   - `tests/test_m1_labels.py` names the packages as strings in its source-scan test, so those strings were renamed too;
   - `src/pathcrf_adapter/model.py`: the default location of the vendored PathCRF on `sys.path` changed from `HERE.parent / "pathcrf"` to `HERE.parents[1] / "vendor" / "pathcrf"` (the `M1PC_PATHCRF` override still works);
-  - file paths, data paths, the `D:\m1_tmp` scratch default, PFF match ids, the Slurm job scripts and `python -m m1pc...` calls in shell scripts are **unchanged** (they are still M1's).
+  - file paths, data paths, the `<scratch>` scratch default, PFF match ids, the Slurm job scripts and `python -m m1pc...` calls in shell scripts are **unchanged** (they are still M1's).
 
 | new path | M1 source path | import-line edits |
 |---|---|---|
@@ -70,17 +73,17 @@ Everything below was **copied** (the originals were not moved or edited) on 2026
 | `tests/test_m1_c3.py` | `tests/test_m1_c3.py` | 4 |
 | `tests/test_m1_v2.py` | `tests/test_m1_v2.py` | 4 |
 | `tests/test_m1_labels.py` | `tests/test_m1_labels.py` | 8 |
-| `vendor/pathcrf/LICENSE` | `D:/m1_tmp/ext/pathcrf/LICENSE` | 0 |
-| `vendor/pathcrf/README.md` | `D:/m1_tmp/ext/pathcrf/README.md` | 0 |
-| `vendor/pathcrf/requirements.txt` | `D:/m1_tmp/ext/pathcrf/requirements.txt` | 0 |
-| `vendor/pathcrf/setup.cfg` | `D:/m1_tmp/ext/pathcrf/setup.cfg` | 0 |
-| `vendor/pathcrf/dataset.py` | `D:/m1_tmp/ext/pathcrf/dataset.py` | 0 |
-| `vendor/pathcrf/train.py` | `D:/m1_tmp/ext/pathcrf/train.py` | 0 |
-| `vendor/pathcrf/inference.py` | `D:/m1_tmp/ext/pathcrf/inference.py` | 0 |
-| `vendor/pathcrf/evaluate.py` | `D:/m1_tmp/ext/pathcrf/evaluate.py` | 0 |
-| `vendor/pathcrf/models` | `D:/m1_tmp/ext/pathcrf/models` | 0 |
-| `vendor/pathcrf/set_transformer` | `D:/m1_tmp/ext/pathcrf/set_transformer` | 0 |
-| `vendor/pathcrf/datatools` | `D:/m1_tmp/ext/pathcrf/datatools` | 0 |
-| `vendor/pathcrf/saved/140` | `D:/m1_tmp/ext/pathcrf/saved/140` | 0 |
+| `vendor/pathcrf/LICENSE` | `<scratch>/ext/pathcrf/LICENSE` | 0 |
+| `vendor/pathcrf/README.md` | `<scratch>/ext/pathcrf/README.md` | 0 |
+| `vendor/pathcrf/requirements.txt` | `<scratch>/ext/pathcrf/requirements.txt` | 0 |
+| `vendor/pathcrf/setup.cfg` | `<scratch>/ext/pathcrf/setup.cfg` | 0 |
+| `vendor/pathcrf/dataset.py` | `<scratch>/ext/pathcrf/dataset.py` | 0 |
+| `vendor/pathcrf/train.py` | `<scratch>/ext/pathcrf/train.py` | 0 |
+| `vendor/pathcrf/inference.py` | `<scratch>/ext/pathcrf/inference.py` | 0 |
+| `vendor/pathcrf/evaluate.py` | `<scratch>/ext/pathcrf/evaluate.py` | 0 |
+| `vendor/pathcrf/models` | `<scratch>/ext/pathcrf/models` | 0 |
+| `vendor/pathcrf/set_transformer` | `<scratch>/ext/pathcrf/set_transformer` | 0 |
+| `vendor/pathcrf/datatools` | `<scratch>/ext/pathcrf/datatools` | 0 |
+| `vendor/pathcrf/saved/140` | `<scratch>/ext/pathcrf/saved/140` | 0 |
 
 Written for this repo (not copied): `scripts/check_scorer_parity.py`, `pyproject.toml`, `.gitignore`, `README.md`, `docs/*`, `models/README.md`, `data/README.md`, `vendor/pathcrf/VENDORED.txt`.

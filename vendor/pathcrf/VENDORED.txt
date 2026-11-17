@@ -1,7 +1,0 @@
-PathCRF (Kim et al., KDD 2026, arXiv 2602.12080), https://github.com/hyunsungkim-ds/pathcrf,
-commit 1b7c6f85a6b78c92e4543fde72ca2b86a933f997.
-Licence: Mozilla Public License 2.0 (LICENSE in this folder). Vendored unchanged; only these files are included:
-LICENSE, README.md, requirements.txt, setup.cfg, dataset.py, train.py, inference.py, evaluate.py, models/, set_transformer/,
-datatools/, saved/140/ (published model 140: args.json, log.txt, model).
-saved/140/model (37 MB weights) is present locally but git-ignored; get it from the upstream repo at the commit above.
-Our changes live in src/pathcrf_adapter/ and do not edit these files.

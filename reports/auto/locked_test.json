@@ -1,0 +1,36 @@
+{
+ "degraded": {
+  "spell_mean": 0.6166920126376865,
+  "spell_ci95": [
+   0.5983173470110487,
+   0.6356087714738238
+  ],
+  "macro_mean": 0.9022575112591987,
+  "short_spell_recall": 0.11337868480725624,
+  "restart_team_acc": 0.974910394265233,
+  "restart_matched_share": 0.7526978417266187,
+  "pooled": {
+   "spell": 0.614619816969834,
+   "macro": 0.9084267447632914
+  },
+  "n_matches": 16,
+  "minutes": 2.8
+ },
+ "clean": {
+  "spell_mean": 0.6443059446476914,
+  "spell_ci95": [
+   0.6239152877974145,
+   0.6650902722055039
+  ],
+  "macro_mean": 0.9114000148983921,
+  "short_spell_recall": 0.1383219954648526,
+  "restart_team_acc": 0.983127109111361,
+  "restart_matched_share": 0.7994604316546763,
+  "pooled": {
+   "spell": 0.6419791783275495,
+   "macro": 0.9167257149982345
+  },
+  "n_matches": 16,
+  "minutes": 5.1
+ }
+}

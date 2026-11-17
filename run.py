@@ -1,7 +1,6 @@
 """One command: the hackathon submission from the raw match data and the saved C3-T model (no training).
 
     python run.py [--out outputs/submission.csv] [--no-validate]
-    python run.py --pathcrf published|<checkpoint> --out outputs/<name>.csv      # the PathCRF combo (CPU, fp32)
 
 Steps: read the match (Metrica EPTS tracking + metadata, official readers) -> player-slot clean-up as the model was trained
 (models/c3/decoder.json: feature_mode, dedup) -> ball: smoother + ball-from-players (models/bfp) -> C3-T features ->
@@ -9,11 +8,6 @@ layer 1 P(dead), layer 2 P(home | alive), 3-state Viterbi (models/c3) -> post-ru
 from Smart Tagging) -> one label per frame: H / A / D on the graded halves, X elsewhere -> official validator.
 Deterministic: same inputs and models give the same file (LightGBM prediction is deterministic on CPU).
 Prints only the label shares, the file's sha256 and the validator result.
-
---pathcrf (the step-2b combo): C3-T layer 1 decides DEAD (its P(D) and its decoder, unchanged); PathCRF decides the team:
-its P(sender is home | sender is a player) replaces C3-T's layer-2 P(home | alive) inside the same Viterbi decoder.
-PathCRF's input is built exactly as on the HPC (duplicate rule, ball fill, trim to 11, Hungarian re-linking into 22
-lanes; pathcrf_adapter.build.pathcrf_arrays). CPU, fp32, torch deterministic algorithms, fixed threads.
 """
 from __future__ import annotations
 
@@ -52,26 +46,7 @@ def load_c3t():
     return model, dec, bfp
 
 
-def pathcrf_q(m_raw: dict, bfp, spec: str, rows, threads: int, pred_stride_s: float):
-    """PathCRF's team probability at C3-T's rows for the hackathon match (CPU, fp32)."""
-    import torch
-    from pathcrf_adapter import adapter as A
-    from pathcrf_adapter.build import pathcrf_arrays
-    from pathcrf_adapter.predict import load_model, predict_match
-    from pathcrf_adapter.score import q_at_rows
-    torch.set_num_threads(threads)
-    torch.use_deterministic_algorithms(True)
-    m = T.prepare_players(m_raw, "current", dedup=True)                 # as the HPC build
-    arr, st = pathcrf_arrays(m, BF.fill_ball(m, bfp))
-    model, ball_on = load_model(spec, "cpu")
-    r = predict_match(model, A.Match(arr), torch.device("cpu"), False, stride=max(1, int(round(pred_stride_s * 5))), batch=8,
-                      ball=ball_on)
-    print(f"PathCRF ({spec}, ball input {'on' if ball_on else 'off'}): {len(r['frames'])} steps, uncovered "
-          f"{(r['covered'] == 0).mean():.4f}; lanes: both teams >= 10 in {100 * st['window']['share_both_teams_ge10']:.1f} % of windows")
-    return q_at_rows(r["frames"], r["q_home"], rows)
-
-
-def predict_labels(pathcrf: str | None = None, threads: int = 4, pred_stride_s: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+def predict_labels() -> tuple[np.ndarray, np.ndarray]:
     model, dec, bfp = load_c3t()
     mode = dec.get("feature_mode", "current")
     m_raw = read_metrica()
@@ -82,13 +57,7 @@ def predict_labels(pathcrf: str | None = None, threads: int = 4, pred_stride_s: 
     if names != dec["features"]:
         raise SystemExit("feature names differ from the saved model (models/c3/decoder.json)")
     f = dict(rows=rows, X=X, prow=m["period"][rows], period=m["period"])
-    if pathcrf:
-        from pathcrf_adapter.score import combo
-        p_dead = model["l1"].predict(X)
-        q = pathcrf_q(m_raw, bfp, pathcrf, rows, threads, pred_stride_s)
-        pred = combo(p_dead, q, f["prow"], rows, len(m["period"]), m["period"], model["C"], model["w"], model["beta"])
-    else:
-        pred = PL.predict(model, f)
+    pred = PL.predict(model, f)
     rules = tuple(dec.get("rules", ()))
     if rules:
         tags, ko = PL.metrica_tags(m["teams"][0])
@@ -130,12 +99,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=str(OUT / "submission.csv"))
     ap.add_argument("--no-validate", action="store_true")
-    ap.add_argument("--pathcrf", help="'published' or a PathCRF checkpoint: the combo (C3-T DEAD + PathCRF team)")
-    ap.add_argument("--threads", type=int, default=4, help="torch CPU threads (--pathcrf)")
-    ap.add_argument("--pred-stride", type=float, default=1.0, help="PathCRF window stride in seconds (--pathcrf)")
     a = ap.parse_args()
     t0 = time.time()
-    labels, graded = predict_labels(a.pathcrf, a.threads, a.pred_stride)
+    labels, graded = predict_labels()
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="\n") as fh:

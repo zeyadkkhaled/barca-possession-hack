@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-M1_ROOT = Path(os.environ.get("M1_ROOT", r"Z:\GP\Task 2 - match sim"))
+M1_ROOT = Path(os.environ.get("M1_ROOT", "../m1-possession"))
 STRESS_EVAL = (3816, 3829, 3847, 3852, 10512, 10514)          # M1 src/m1_possession/splits.py
 LOCKED_TEST = (3822, 3825, 3827, 3828, 3834, 3836, 3842, 3844, 3848, 10503, 10505, 10508, 10509, 10510, 10511, 10513)
 
@@ -20,6 +20,21 @@ LOCKED_TEST = (3822, 3825, 3827, 3828, 3834, 3836, 3842, 3844, 3848, 10503, 1050
 def load_stress_match(mid: int) -> dict:
     if mid in LOCKED_TEST or mid not in STRESS_EVAL:
         raise ValueError(f"match {mid} is not a stress-eval match (locked test matches are never read)")
+    return _load_match(mid)
+
+
+def load_locked_test_match(mid: int, unlock: bool = False) -> dict:
+    """The 16 locked test matches: only for the one final test run (scripts/locked_test.py, logged in
+    docs/dev_log/LOCKED_USED.md)."""
+    if not unlock or mid not in LOCKED_TEST:
+        raise ValueError(f"match {mid}: locked test matches need unlock=True (final test run only)")
+    # read from the m1_hpc_v2_eval package (scripts/export_eval_package.py): the same M1 sources and package format
+    pkg = Path(os.environ.get("EVAL_PKG", "scratch/m1_hpc_v2_eval")) / "matches"
+    with np.load(pkg / f"{mid}.npz") as z:
+        return {k: z[k] for k in z.files}
+
+
+def _load_match(mid: int) -> dict:
     base = M1_ROOT / "data" / "processed" / "m1_possession"
     z = np.load(base / "inputs" / f"{mid}.npz")
     lab = np.load(base / "labels" / "v2" / f"{mid}.npz")
