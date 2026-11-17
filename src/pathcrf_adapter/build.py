@@ -16,6 +16,9 @@ Coordinates: our convention (centre origin, metres, pitch 105.3 x 68, home attac
 is always PathCRF's left team. Writes <out>/build_stats.json (aggregates) and copies folds.json.
 
     python -m pathcrf_adapter.build --package DATA --out BUILT [--workers 4] [--matches ...]
+    python -m pathcrf_adapter.build --eval-package EVAL --out BUILT_EVAL     # stress + locked: lanes only, no targets, no
+                                                                             # C3-T features, nothing scored (labels are read
+                                                                             # only by the degradation's dead-ball gap weight)
 """
 from __future__ import annotations
 
@@ -159,13 +162,49 @@ def build_one(args):
     return int(m["match_id"]), st, names
 
 
+def build_eval_one(args):
+    """Prediction-only lane file for a stress / locked match (the same degradation, duplicate rule, ball fill, re-linking)."""
+    path, out, cfg = args
+    t0 = time.time()
+    import lightgbm as lgb
+    bfp = [lgb.Booster(model_file=str(MODELS / "bfp" / nm)) for nm in ("bfp_dx.txt", "bfp_dy.txt")]
+    d = DP.load_package_match(path)
+    m = DP.degrade_match(d, cfg["stats"], cfg["seed"], dead_weight=cfg["dead_weight"], extra=cfg["extra"])
+    m = T.prepare_players(m, "current", dedup=True)
+    ball = BF.fill_ball(m, bfp)
+    arr, st = pathcrf_arrays(m, ball, owner=None)
+    arr["match_id"] = np.int64(m["match_id"])
+    np.savez_compressed(out / "pathcrf" / f"{m['match_id']}.npz", **arr)
+    st.update(match_id=int(m["match_id"]), frames=int(len(m["t"])), seconds=time.time() - t0)
+    return int(m["match_id"]), st
+
+
+def main_eval(pkg: Path, out: Path, workers: int) -> int:
+    t0 = time.time()
+    (out / "pathcrf").mkdir(parents=True, exist_ok=True)
+    files = sorted((pkg / "matches").glob("*.npz"))
+    cfg = config()
+    with multiprocessing.Pool(workers) as pool:
+        res = [st for _, st in pool.imap_unordered(build_eval_one, [(p, out, cfg) for p in files])]
+    agg = dict(n_matches=len(res), share_both_teams_ge10=float(np.mean([r["window"]["share_both_teams_ge10"] for r in res])),
+               mean_links_per_window=float(np.mean([r["window"]["mean_links_per_window"] for r in res])),
+               matches=sorted(r["match_id"] for r in res), seconds=time.time() - t0, note="prediction inputs only; never scored")
+    (out / "build_stats.json").write_text(json.dumps(agg, indent=1, default=float))
+    print(f"built {len(res)} eval matches (lanes only) in {time.time() - t0:.0f} s: both teams >= 10 lanes "
+          f"{100 * agg['share_both_teams_ge10']:.1f} % of windows", flush=True)
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--package", required=True, help="the M1 PFF package (matches/*.npz + folds.json)")
+    ap.add_argument("--package", help="the M1 PFF package (matches/*.npz + folds.json)")
+    ap.add_argument("--eval-package", help="stress + locked package (m1_hpc_v2_eval): prediction inputs only")
     ap.add_argument("--out", required=True)
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--matches", type=int, nargs="*")
     a = ap.parse_args(argv)
+    if a.eval_package:
+        return main_eval(Path(a.eval_package), Path(a.out), a.workers)
     t0 = time.time()
     pkg, out = Path(a.package), Path(a.out)
     for sub in ("c3t", "pathcrf"):

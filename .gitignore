@@ -21,6 +21,8 @@ outputs/
 # --- model weights ---
 models/*
 !models/README.md
+!models/c3/
+!models/bfp/
 *.pt
 *.pth
 *.ckpt

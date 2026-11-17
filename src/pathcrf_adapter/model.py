@@ -57,6 +57,45 @@ def widen_state_dict(sd: dict, model: nn.Module, extra: int) -> tuple[dict, list
     return out, widened
 
 
+def adapt_state_dict(sd: dict, model: nn.Module) -> tuple[dict, list]:
+    """A state dict for `model` from one trained with or without the 3 ball inputs: input weights 3 columns narrower get 3
+    zero ball columns inserted after the 8 player features (no-ball -> ball); 3 columns wider lose them (ball -> no-ball).
+    Every other tensor must match exactly."""
+    own = model.state_dict()
+    out, changed = {}, []
+    for k, w in own.items():
+        if k not in sd:
+            raise KeyError(f"checkpoint has no {k}")
+        v = sd[k]
+        if v.shape == w.shape:
+            out[k] = v
+        elif v.dim() == 2 and v.shape[0] == w.shape[0] and w.shape[1] - v.shape[1] == 3:
+            out[k] = torch.cat([v[:, :BASE_FEAT], torch.zeros(v.shape[0], 3, dtype=v.dtype), v[:, BASE_FEAT:]], 1)
+            changed.append(f"{k} +ball")
+        elif v.dim() == 2 and v.shape[0] == w.shape[0] and v.shape[1] - w.shape[1] == 3:
+            out[k] = torch.cat([v[:, :BASE_FEAT], v[:, BASE_FEAT + 3:]], 1)
+            changed.append(f"{k} -ball")
+        else:
+            raise ValueError(f"checkpoint {k} {tuple(v.shape)} does not fit {tuple(w.shape)}")
+    return out, changed
+
+
+def checkpoint_state(path) -> tuple[dict, dict]:
+    """(state dict, its run config) from one of our / M1's checkpoints ({'model': ..., 'cfg': ...}) or a bare state dict."""
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    if isinstance(ck, dict) and "model" in ck:
+        return ck["model"], ck.get("cfg") or {}
+    return ck, {}
+
+
+def init_from(model: "M1PathCRF", path) -> dict:
+    """Load every weight (PathCRF + travelling/loose head) from a checkpoint, adapting the ball inputs if needed."""
+    sd, cfg = checkpoint_state(path)
+    sd, changed = adapt_state_dict(sd, model)
+    model.load_state_dict(sd, strict=True)
+    return dict(path=str(path), adapted=changed, source_no_ball=bool(cfg.get("no_ball", False)), source_variant=cfg.get("variant"))
+
+
 class TLHead(nn.Module):
     def __init__(self, dim: int = 128, hidden: int = 64):
         super().__init__()

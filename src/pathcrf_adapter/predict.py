@@ -12,7 +12,7 @@ covered (S,)           number of windows that saw the step
 Probabilities are averaged over all windows that contain the step (prediction stride --pred-stride, default 1 s).
 
     python -m pathcrf_adapter.predict --data BUILT --run-dir RUN [--matches ...] [--fp32] [--out-subdir preds]
-    python -m pathcrf_adapter.predict --data BUILT --zero-shot --out DIR --matches ...   # published weights, no ball, no head
+    python -m pathcrf_adapter.predict --data BUILT --model published|CKPT --out DIR [--matches ...]   # zero-shot / any checkpoint
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ import numpy as np
 import torch
 
 from . import adapter as A
-from .model import N, M1PathCRF
+from .model import N, M1PathCRF, checkpoint_state, init_from
 
 
 @torch.no_grad()
@@ -70,37 +70,68 @@ def predict_match(model, M: A.Match, dev, amp, stride=5, batch=32, ball=True):
     return out
 
 
-def load_model(run_dir=None, checkpoint="best.pt", zero_shot=False, dev="cpu"):
-    """(model, ball) from a run's checkpoint, or the published weights (zero-shot: no ball input, untrained head)."""
-    if zero_shot:
+def load_model(spec, dev="cpu"):
+    """(model, ball) from "published" (PathCRF's model 140 as is: no ball input, untrained head) or a checkpoint path
+    (ours or M1's: the ball input follows the checkpoint's run config)."""
+    if spec == "published":
         return M1PathCRF(ball=False, pretrained=True).to(dev).eval(), False
-    cfg = json.loads((Path(run_dir) / "config.json").read_text())
+    _, cfg = checkpoint_state(spec)
     ball = not cfg.get("no_ball", False)
-    model = M1PathCRF(ball=ball, pretrained=False).to(dev)
-    ck = torch.load(Path(run_dir) / "checkpoints" / checkpoint, map_location=dev, weights_only=False)
-    model.load_state_dict(ck["model"])
-    return model.eval(), ball
+    model = M1PathCRF(ball=ball, pretrained=False)
+    init_from(model, spec)
+    return model.to(dev).eval(), ball
+
+
+def val_scores(model, matches: dict, data, c3t_dir, dev, amp, ball, stride=15) -> dict:
+    """Combo scores (C3-T P(D) + decoder, PathCRF team) on validation matches; mean per match. stride in 5 fps steps."""
+    from .score import combo, q_at_rows, score_codes
+    dec = json.loads((Path(c3t_dir) / "decoder.json").read_text())
+    sc, ex = [], []
+    for mid, M in matches.items():
+        r = predict_match(model, M, dev, amp, stride=stride, ball=ball)
+        with np.load(Path(data) / "c3t" / f"{mid}.npz") as z:
+            gt, gmask, period = z["gt"], z["gmask"], z["period"]
+        with np.load(Path(c3t_dir) / f"{mid}.npz") as z:
+            rows, p_dead, prow = z["rows"], z["p_dead"], z["prow"]
+        q = q_at_rows(r["frames"], r["q_home"], rows)
+        s = score_codes(gt, gmask, period, combo(p_dead, q, prow, rows, len(period), period, dec["C"], dec["w"], dec["beta"]))
+        sc.append((s["spell"], s["macro"])); ex.append(s["extra"])
+    a = np.array(sc)
+    from barca_train.pipeline import merge_extra
+    e = merge_extra(ex)
+    return dict(val_spell=float(a[:, 0].mean()), val_macro=float(a[:, 1].mean()), val_short_recall=e["short_spell_recall"],
+                val_restart_acc=e["restart_team_acc"])
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--data", required=True)
-    ap.add_argument("--run-dir")
-    ap.add_argument("--zero-shot", action="store_true", help="PathCRF's published model 140 as is (no ball input)")
+    ap.add_argument("--data", required=True, help="built folder (pathcrf/<match>.npz)")
+    ap.add_argument("--run-dir", help="use RUN/checkpoints/<checkpoint>; output RUN/<out-subdir>")
+    ap.add_argument("--model", help="'published' or a checkpoint path (instead of --run-dir)")
+    ap.add_argument("--zero-shot", action="store_true", help="same as --model published")
     ap.add_argument("--out", help="output folder (default RUN/<out-subdir>)")
-    ap.add_argument("--matches", type=int, nargs="*", help="default: the run's held-out matches")
+    ap.add_argument("--matches", type=int, nargs="*", help="default: the run's held-out matches, else every built match")
     ap.add_argument("--checkpoint", default="best.pt")
     ap.add_argument("--fp32", action="store_true")
     ap.add_argument("--pred-stride", type=float, default=1.0, help="seconds")
     ap.add_argument("--out-subdir", default="preds")
+    ap.add_argument("--threads", type=int, default=0, help="CPU threads (0 = torch default)")
     a = ap.parse_args(argv)
+    if a.threads:
+        torch.set_num_threads(a.threads)
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     amp = dev.type == "cuda" and not a.fp32
-    if not a.zero_shot and not (Path(a.run_dir) / "checkpoints" / a.checkpoint).exists():
-        print(f"no {a.checkpoint} in {a.run_dir} (training skipped or failed): nothing to predict")
+    spec = "published" if a.zero_shot else a.model or str(Path(a.run_dir) / "checkpoints" / a.checkpoint)
+    if spec != "published" and not Path(spec).exists():
+        print(f"no checkpoint {spec} (training skipped or failed): nothing to predict")
         return 0
-    model, ball = load_model(a.run_dir, a.checkpoint, a.zero_shot, dev)
-    mids = a.matches or json.loads((Path(a.run_dir) / "config.json").read_text())["held"]
+    model, ball = load_model(spec, dev)
+    if a.matches:
+        mids = a.matches
+    elif a.run_dir and (Path(a.run_dir) / "config.json").exists() and json.loads((Path(a.run_dir) / "config.json").read_text()).get("held"):
+        mids = json.loads((Path(a.run_dir) / "config.json").read_text())["held"]
+    else:
+        mids = sorted(int(p.stem) for p in (Path(a.data) / "pathcrf").glob("*.npz"))
     out = Path(a.out) if a.out else Path(a.run_dir) / a.out_subdir
     out.mkdir(parents=True, exist_ok=True)
     for m in mids:
@@ -108,7 +139,7 @@ def main(argv=None) -> int:
         r = predict_match(model, M, dev, amp, stride=max(1, int(round(a.pred_stride * 5))), ball=ball)
         np.savez_compressed(out / f"{m}.npz", **r)
         print(f"{m}: {len(r['frames'])} steps, uncovered {(r['covered'] == 0).mean():.4f}", flush=True)
-    (out / "README.txt").write_text(f"PathCRF predictions ({'zero-shot, published model 140' if a.zero_shot else a.checkpoint}), "
+    (out / "README.txt").write_text(f"PathCRF predictions: model {spec} (ball input {'on' if ball else 'off'}), "
                                     f"{'fp32' if not amp else 'bf16'} inference; format: pathcrf_adapter/predict.py docstring\n")
     return 0
 

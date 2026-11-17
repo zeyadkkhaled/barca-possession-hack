@@ -6,7 +6,7 @@ Zip layout:
                                                                              published model 140 (saved/140)
   code/models/bfp/bfp_d{x,y}.txt                                             ball-from-players model (trained on degraded PFF)
   code/reports/auto/{load_stats,degrade_stats_extra,extra_slot_diag}.json   aggregate rates that drive the degradation
-  code/jobs/*.sh, code/env/setup_env.sh, code/run_step2.sh, code/HPC_STEP2.md
+  code/jobs/*.sh, code/run_step2.sh, code/status_step2.sh, code/HPC_STEP2.md
   HPC_STEP2.md
 No data: no hackathon data (only the aggregate rate files above) and no PFF data (the HPC builds it from the existing
 ~/projects/m1-possession/data). Shell scripts are written with LF line endings.
@@ -39,9 +39,10 @@ def entries():
         out.append((REPO / "models" / "bfp" / nm, f"code/models/bfp/{nm}"))
     for nm in AUTO_FILES:
         out.append((REPO / "reports" / "auto" / nm, f"code/reports/auto/{nm}"))
-    for f in sorted((HERE / "jobs").glob("*.sh")) + sorted((HERE / "env").glob("*.sh")):
-        out.append((f, f"code/{f.parent.name}/{f.name}"))
+    for f in sorted((HERE / "jobs").glob("*.sh")):
+        out.append((f, f"code/jobs/{f.name}"))
     out.append((HERE / "run_step2.sh", "code/run_step2.sh"))
+    out.append((HERE / "status_step2.sh", "code/status_step2.sh"))
     out.append((HERE / "HPC_STEP2.md", "code/HPC_STEP2.md"))
     out.append((HERE / "HPC_STEP2.md", "HPC_STEP2.md"))
     return out
@@ -62,7 +63,7 @@ def main() -> int:
             data = src.read_bytes()
             if name.endswith((".sh", ".py", ".md", ".json", ".txt")) and b"\r\n" in data and not name.startswith("code/vendor/"):
                 data = data.replace(b"\r\n", b"\n")
-            info = zipfile.ZipInfo(name, date_time=(2026, 11, 16, 0, 0, 0))
+            info = zipfile.ZipInfo(name, date_time=(2026, 11, 17, 0, 0, 0))
             info.external_attr = (0o755 if name.endswith(".sh") else 0o644) << 16
             info.compress_type = zipfile.ZIP_DEFLATED
             z.writestr(info, data)

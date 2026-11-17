@@ -22,6 +22,26 @@ from barca_train import pipeline as PL
 VARIANTS = ("c3t", "pathcrf", "blend")
 
 
+def combo(p_dead, q_home, prow, rows, n, period, C, w, beta):
+    """The combo: C3-T layer 1 P(D) and C3-T's 3-state decoder (C, w, beta), with any team probability q_home (C3-T's
+    layer 2, PathCRF's, or a blend) -> per-frame H/A/D codes (-1 outside the periods)."""
+    path = T.decode(p_dead, q_home, prow, np.asarray(C), w, beta)
+    return T.rows_to_frames(path, rows, n, period)
+
+
+def q_at_rows(frames, q, rows):
+    """PathCRF's per-step q at C3-T's rows (both are every 5th frame of each period)."""
+    pos = np.searchsorted(frames, rows)
+    if not (frames[np.clip(pos, 0, len(frames) - 1)] == rows).all():
+        raise ValueError("PathCRF steps and C3-T rows differ")
+    return np.asarray(q, np.float64)[pos]
+
+
+def score_codes(gt, gmask, period, pred) -> dict:
+    s = PL.score_hda(gt, gmask, period, pred)
+    return dict(spell=s["spell"], macro=s["macro"], raw=s["raw"], extra=PL.extra_metrics(gt, gmask, period, pred))
+
+
 def score(data, c3t_dir, preds_dir) -> dict:
     dec = json.loads((Path(c3t_dir) / "decoder.json").read_text())
     C = np.array(dec["C"])
@@ -38,21 +58,15 @@ def score(data, c3t_dir, preds_dir) -> dict:
         q_pc = None
         if pp.exists():
             with np.load(pp) as z:
-                fr, qh = z["frames"], z["q_home"]
-            pos = np.searchsorted(fr, rows)
-            assert (fr[np.clip(pos, 0, len(fr) - 1)] == rows).all(), "PathCRF steps and C3-T rows differ"
-            q_pc = qh[pos].astype(np.float64)
+                q_pc = q_at_rows(z["frames"], z["q_home"], rows)
         else:
             missing.append(m)
         qs = dict(c3t=q_c3, pathcrf=q_pc, blend=None if q_pc is None else 0.5 * (q_c3 + q_pc))
         for v, q in qs.items():
             if q is None:
                 continue
-            path = T.decode(p_dead, q, prow, C, dec["w"], dec["beta"])
-            pred = T.rows_to_frames(path, rows, len(period), period)
-            s = PL.score_hda(gt, gmask, period, pred)
-            per_v[v].append((s["spell"], s["macro"])); raws[v].append(s["raw"])
-            extra[v].append(PL.extra_metrics(gt, gmask, period, pred))
+            s = score_codes(gt, gmask, period, combo(p_dead, q, prow, rows, len(period), period, C, dec["w"], dec["beta"]))
+            per_v[v].append((s["spell"], s["macro"])); raws[v].append(s["raw"]); extra[v].append(s["extra"])
     res = {}
     for v in VARIANTS:
         if len(per_v[v]) != len(dec["held"]):
@@ -82,11 +96,17 @@ def main(argv=None) -> int:
     ap.add_argument("--preds", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--title", default="")
+    ap.add_argument("--notes", help="append the table to this folder's NOTES.md")
     a = ap.parse_args(argv)
     res = score(a.data, a.c3t, a.preds)
     Path(a.out).write_text(json.dumps(res, indent=1))
     md = table(res, a.title or Path(a.out).stem)
     Path(a.out).with_suffix(".md").write_text(md, encoding="utf-8")
+    if a.notes:
+        n = Path(a.notes) / "NOTES.md"
+        n.parent.mkdir(parents=True, exist_ok=True)
+        with open(n, "a", encoding="utf-8") as fh:
+            fh.write("\n## Fold-0 score (6 held-out matches, degraded + relinked)\n\n" + md)
     print(md)
     return 0
 

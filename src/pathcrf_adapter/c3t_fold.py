@@ -4,7 +4,8 @@ probability for PathCRF's under the same dead-ball model and the same Viterbi de
 
     python -m pathcrf_adapter.c3t_fold --data BUILT --fold 0 --out RUNS/c3t_fold0 [--threads 4]
 
-<out>/<match>.npz: rows, p_dead, q_home, prow; <out>/decoder.json: C, w, beta, train / held matches.
+<out>/<match>.npz for all 30 matches (in_sample = trained on; the held-out ones are the honest scores): rows, p_dead,
+q_home, prow; <out>/decoder.json: C, w, beta, train / held matches.
 """
 from __future__ import annotations
 
@@ -44,15 +45,14 @@ def main(argv=None) -> int:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     sc = []
-    for m in held:
+    for m in train + held:                       # training matches too: PathCRF's inner validation uses their P(D) (in-sample)
         f = feats[m]
         p_dead = model["l1"].predict(f["X"])
         q = model["l2"].predict(T.l2_inputs(f["X"], p_dead, f["prow"]))
         np.savez_compressed(out / f"{m}.npz", rows=f["rows"], p_dead=p_dead.astype(np.float32), q_home=q.astype(np.float32),
-                            prow=f["prow"])
-        pred = PL.predict(model, f)
-        s = PL.score_hda(f["gt"], f["gmask"], f["period"], pred)
-        sc.append(s["spell"])
+                            prow=f["prow"], in_sample=np.bool_(m in train))
+        if m in held:
+            sc.append(PL.score_hda(f["gt"], f["gmask"], f["period"], PL.predict(model, f))["spell"])
     (out / "decoder.json").write_text(json.dumps(dict(C=model["C"].tolist(), w=model["w"], beta=model["beta"], fold=a.fold,
                                                       train=train, held=held, inner_spell=model["inner_spell"]), indent=1))
     print(f"C3-T fold {a.fold}: held-out spellF1 {np.mean(sc):.4f} (mean per match) ({time.time() - t0:.0f} s)", flush=True)

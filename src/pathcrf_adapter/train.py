@@ -33,7 +33,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from . import adapter as A
-from .model import M1PathCRF, losses
+from .model import M1PathCRF, init_from, losses
+from .predict import val_scores
 
 KEYS = ("x", "pmask", "src", "dst", "mask", "tl")
 
@@ -73,15 +74,22 @@ def variant_name(a) -> str:
 
 
 def write_notes(run: Path, cfg: dict, hist: list, state: dict, score: dict | None = None):
-    best = min(hist, key=lambda h: h.get("val_loss", math.inf)) if hist and "val_loss" in hist[0] else (hist[-1] if hist else {})
+    if hist and "val_spell" in hist[0]:
+        best = max(hist, key=lambda h: h.get("val_spell", -1))
+    else:
+        best = min(hist, key=lambda h: h.get("val_loss", math.inf)) if hist and "val_loss" in hist[0] else (hist[-1] if hist else {})
     lines = [f"# {run.name}", "",
              f"- model: PathCRF model 140 (Set Attention + dynamic sparse CRF) + travelling/loose head, ball input {'off' if cfg['no_ball'] else 'on'}",
+             f"- data: {cfg['data']} (degraded + relinked PFF, 25 fps -> 5 fps steps); validation spellF1 uses C3-T's P(D) from "
+             f"{cfg.get('c3t')} (in-sample for these matches: a monitor, not a test score)",
              f"- variant: {cfg['variant']}   fold: {'all 30 learning matches' if cfg['all'] else cfg['fold']}",
-             f"- settings: {json.dumps({k: cfg[k] for k in ('from_scratch', 'keep_dead_windows', 'stride', 'fp32', 'max_epochs', 'patience', 'batch', 'lr', 'tl_weight', 'seed')})}",
+             f"- settings: {json.dumps({k: cfg[k] for k in ('from_scratch', 'keep_dead_windows', 'stride', 'fp32', 'max_epochs', 'patience', 'batch', 'lr', 'tl_weight', 'seed', 'gpu_hours')})}",
              f"- training matches: {len(cfg['train'])}, inner validation: {cfg['val']}, held out: {cfg['held']}",
              f"- windows: {cfg.get('n_windows')} used of {cfg.get('n_windows_all')} ({100 * cfg.get('skipped_share', 0):.1f} % skipped: no scored live frame)",
              f"- epochs run: {len(hist)}; stop reason: {state.get('stop_reason')}; best epoch: {best.get('epoch')}",
-             f"- best validation: loss {best.get('val_loss', float('nan')):.4f}, edge acc {best.get('val_edge_acc', float('nan')):.4f}, "
+             f"- init: {cfg.get('init_from') or ('published model 140' if not cfg.get('from_scratch') else 'scratch')}",
+             f"- best validation: spellF1 {best.get('val_spell', float('nan')):.4f}, macroF1 {best.get('val_macro', float('nan')):.4f}, "
+             f"loss {best.get('val_loss', float('nan')):.4f}, edge acc {best.get('val_edge_acc', float('nan')):.4f}, "
              f"travel/loose acc {best.get('val_tl_acc', float('nan')):.4f}",
              f"- GPU hours used (training): {state.get('gpu_seconds', 0) / 3600:.2f}"]
     if score:
@@ -99,6 +107,10 @@ def main(argv=None) -> int:
     g.add_argument("--fold", type=int)
     g.add_argument("--all", action="store_true")
     ap.add_argument("--from-scratch", action="store_true")
+    ap.add_argument("--init-from", help="start from this checkpoint (ours or M1's best.pt; ball inputs adapted if needed)")
+    ap.add_argument("--c3t", help="C3-T fold predictions (c3t_fold.py): validation spellF1 / macroF1 after every epoch, and "
+                                  "the best epoch is the one with the highest validation spellF1")
+    ap.add_argument("--val-stride", type=float, default=3.0, help="prediction stride (s) for the per-epoch validation scores")
     ap.add_argument("--keep-dead-windows", action="store_true")
     ap.add_argument("--stride", type=float, default=3.0, help="window stride in seconds (5 steps = 1 s)")
     ap.add_argument("--fp32", action="store_true")
@@ -141,7 +153,14 @@ def main(argv=None) -> int:
     dl = DataLoader(ds, batch_size=a.batch, shuffle=True, num_workers=a.workers, collate_fn=collate, drop_last=True,
                     persistent_workers=a.workers > 0, pin_memory=dev.type == "cuda")
     vl = DataLoader(vs, batch_size=a.batch, shuffle=False, num_workers=min(a.workers, 2), collate_fn=collate) if vs else None
-    model = M1PathCRF(ball=ball, pretrained=not a.from_scratch).to(dev)
+    model = M1PathCRF(ball=ball, pretrained=not a.from_scratch and not a.init_from)
+    if a.init_from and not (run / "checkpoints" / "last.pt").exists():
+        rep = init_from(model, a.init_from)
+        print(f"initialised from {a.init_from}: adapted {rep['adapted'] or 'nothing'}", flush=True)
+        cfg["init_report"] = rep
+        (run / "config.json").write_text(json.dumps(cfg, indent=1))
+    model = model.to(dev)
+    losses_seen = []
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, a.max_epochs), eta_min=lr / 100)
     state = dict(epoch=0, best=math.inf, best_epoch=0, bad=0, gpu_seconds=0.0, stop_reason=None, steps=0)
@@ -188,6 +207,7 @@ def main(argv=None) -> int:
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             opt.step()
             state["steps"] += 1
+            losses_seen.append(info["loss"])
             for k, v in info.items():
                 if isinstance(v, float) and math.isfinite(v):
                     agg[k] = agg.get(k, 0.0) + v
@@ -202,7 +222,9 @@ def main(argv=None) -> int:
                 sps = (time.time() - tw) / max(i - 9, 1) if tw else (time.time() - te) / (i + 1)
                 tv = time.time()
                 vrow = validate(model, vl, dev, amp, a.tl_weight) if vl is not None else {}
+                k = max(1, min(50, len(losses_seen) // 4))
                 (run / "logs" / "smoke.json").write_text(json.dumps(dict(
+                    loss_first=float(np.mean(losses_seen[:k])), loss_last=float(np.mean(losses_seen[-k:])), steps=len(losses_seen),
                     seconds_per_step=sps, steps_per_epoch=len(dl), batch=a.batch, windows_used=len(ds), windows_all=ds.n_all,
                     skipped_share=ds.skipped_share, val_seconds=time.time() - tv, val=vrow,
                     peak_gpu_gb=torch.cuda.max_memory_allocated() / 2**30 if dev.type == "cuda" else None,
@@ -217,13 +239,16 @@ def main(argv=None) -> int:
         row = dict(epoch=ep, seconds=time.time() - te, **{f"train_{k}": v / max(n, 1) for k, v in agg.items()})
         if vl is not None:
             row.update(validate(model, vl, dev, amp, a.tl_weight))
+            if a.c3t:
+                row.update(val_scores(model, vs.m, a.data, a.c3t, dev, amp, ball, stride=max(1, int(round(a.val_stride * 5)))))
+        row["minutes"] = (time.time() - te) / 60
         state["epoch"] = ep
-        epoch_times.append(row["seconds"])
+        epoch_times.append(row["minutes"] * 60)              # with validation, so the GPU cap check is honest
         hist.append(row)
         with open(run / "logs" / "epochs.jsonl", "a") as fh:
             fh.write(json.dumps(row) + "\n")
         print(f"epoch {ep}: " + ", ".join(f"{k} {v:.4f}" for k, v in row.items() if isinstance(v, float)), flush=True)
-        metric = row.get("val_loss", -ep)                 # --all: no validation, the last epoch is the best
+        metric = -row["val_spell"] if "val_spell" in row else row.get("val_loss", -ep)   # --all: the last epoch is the best
         if metric < state["best"]:
             state["best"], state["best_epoch"], state["bad"] = metric, ep, 0
             torch.save(dict(model=model.state_dict(), epoch=ep, cfg=cfg), run / "checkpoints" / "best.pt")
