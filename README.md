@@ -60,8 +60,9 @@ the official one when the prediction has no X (`scripts/check_scorer_parity.py`)
    .venv/Scripts/python -m pip install -r requirements.txt     # Linux / macOS: .venv/bin/python
    ```
 
-3. **Data path:** put the hackathon bundle in `data/` with the layout of `reference/more-than-a-hack-2027/DATA.md`, or
-   set `MTAH_DATA_DIR` to its folder.
+3. **Data path:** put the hackathon bundle in `data/` with the layout of `reference/more-than-a-hack-2027/DATA.md`. The
+   unpacked download folder `data/More Than A Hack 2027 - Initial Challenge - Dataset/` is also found. Otherwise set
+   `MTAH_DATA_DIR` to the folder that holds `tactical/`.
 
 4. **Run:**
 
