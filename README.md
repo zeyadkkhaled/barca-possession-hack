@@ -7,7 +7,7 @@ Our entry for **More than a Hack 2027, Phase 1: ball possession** (Metrica Sport
 - **Training data:** PFF FC World Cup 2022 tracking, degraded to look like Metrica's automatic tracking. The hackathon
   match is never used for training.
 
-**Team:** Zeyad Khaled, Ahmed Hassan. **With thanks to** Omar Essam.
+**Team:** Zeyad Khaled, Ahmed Hassan, Omar Essam.
 
 Method, data and evaluation in detail: [docs/technical.md](docs/technical.md).
 

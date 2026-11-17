@@ -1,6 +1,6 @@
 # Technical document: Visca Barca, More than a Hack 2027 (ball possession)
 
-Team: Zeyad Khaled, Ahmed Hassan. With thanks to Omar Essam. Only aggregate numbers appear in this document.
+Team: Zeyad Khaled, Ahmed Hassan, Omar Essam. Only aggregate numbers appear in this document.
 
 ## 1. Problem
 
@@ -201,7 +201,7 @@ CRF.
 
 ## 9. Team
 
-Zeyad Khaled, Ahmed Hassan (team Visca Barca). With thanks to Omar Essam.
+Zeyad Khaled, Ahmed Hassan, Omar Essam (team Visca Barca).
 
 ## 10. Reproduction
 
