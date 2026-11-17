@@ -63,12 +63,58 @@ air) and LOOSE. They map to H / A / D as follows:
 
 The labels are only training targets and scoring keys, never model inputs.
 
+### 2.5 The possession rules (where we drew the lines)
+
+The rules live in `barca_labels.labeller` and apply only to the PFF training matches. Our model learns them from those
+labels; no rule is written per frame of the hackathon game.
+
+- **Control:** a player has the ball from PFF's on-the-ball event until the next event. TRAVELLING (a pass, cross or
+  shot in flight) belongs to the team that played it, until the next touch.
+- **Loose balls:** a clearance, a rebound, a deflection, a touch that pops away or a carry that loses the ball becomes
+  LOOSE, scored as **the last team that touched it**. Possession changes only when the other team controls the ball.
+- **Challenges:** a spell that holds only 50-50 or aerial challenges is LOOSE, again given to the last team in
+  possession. A challenge does not by itself hand possession to the challenger.
+- **Restarts:** the ball is DEAD from the moment it goes out (or the period ends) until the next spell starts. For a
+  set piece (throw-in, corner, goal kick, free kick, kick-off) it stays DEAD until the restart is **played** (the first
+  pass, cross, shot or clearance). A drop ball is live from its start (Laws of the Game).
+- **Not scored:** frames PFF marks as missing video or as a non-event, and frames outside the periods. Any unclear case
+  gets its own named rule and is counted, never guessed.
+
+### 2.6 Why this approach
+
+- **No labels on the game:** the provided game cannot be labelled, so a supervised model must learn on other games.
+  PFF World Cup 2022 is the largest public tracking set with event data.
+- **Training on degraded data:** a model trained on clean PFF and applied to Metrica's tracking would meet missing
+  balls and broken slots it never saw. Degrading PFF to the game's measured error rates closes that gap (section 4).
+- **Team-level model:** Metrica's slots have no stable identity, so per-player models (M1 earlier tried rule-based and
+  per-player variants, C0–C2) lose the ball's owner every time a slot breaks. Team-level features survive slot breaks.
+- **LightGBM + Viterbi:** fast, deterministic on CPU and reproducible byte for byte. The decoder turns noisy
+  frame-level probabilities into clean spells, which is what spellF1 rewards.
+
+## 2.7 Provided assets: used and dropped
+
+| asset | use |
+|---|---|
+| Tactical-camera tracking (Metrica EPTS) + metadata | **used**: the model's only input at prediction time |
+| Tracking statistics, without labels | **used**: aggregate error rates (ball-missing share, gap lengths, slot breaks, extra slots) set the PFF degradation (section 4). Computed by code, never tied to frames |
+| Smart Tagging (Metrica's automatic tags) | **used for calibration only**: the share of frames with the ball missing just before the 59 set-piece tags set the dead-ball gap weight. **Dropped as an input:** post-rules built on set-piece tags did not raise spellF1 in CV, so the model does not read them |
+| Homography, broadcast video and its ATD, tactical video | **not used** |
+| Public 5-minute ground truth | **checks only** (file format, frame alignment), never training or tuning |
+| PathCRF (published graph model, MPL-2.0) | **tried, dropped for the submission**: not finished in time (section 7) |
+
 ## 3. Training data
 
 - **Source:** PFF FC's FIFA World Cup 2022 dataset: 64 matches, broadcast tracking at ~29.97 fps, events, rosters and
   metadata.
   - PFF FC released it free for research and analysis. Request access on PFF FC's website.
   - No PFF data is in this repository.
+- **Who labelled it and how much:**
+  - PFF FC's analysts produced the event data;
+  - our code (`barca_labels.labeller`) turns those events into one possession label per frame;
+  - **no one on our team hand-labelled anything.**
+  - The model is trained on **30 full matches** (about 3,000 minutes of play).
+- **Nothing from the provided game:** no labels from it are used for training or validation. Only the unlabelled
+  aggregate error rates of its tracking (section 2.7) shape the training data.
 - **Package:** one `.npz` per match, built by `scripts/data/export_pff_package.py`. It holds positions in centre-origin
   metres, the ball with an observed / interpolated flag, labels v2 and the attacking direction.
 - **Splits** (`barca_possession.splits`, fixed seeds):
@@ -157,4 +203,22 @@ CRF.
 
 Zeyad Khaled, Ahmed Hassan (team Visca Barca). With thanks to Omar Essam.
 
-Reproduction: see the README (`python run.py`, expected sha256 `8612514a…a8c5`).
+## 10. Reproduction
+
+```bash
+git clone --recurse-submodules https://github.com/zeyadkkhaled/barca-possession-hack.git
+cd barca-possession-hack
+python -m pip install -r requirements.txt          # Python 3.13, pinned versions
+python run.py --out outputs/submission_c3.csv      # data in data/ or MTAH_DATA_DIR
+```
+
+- **What it does:** reads the hackathon data and the committed models (`models/c3`, `models/bfp`), writes the 199,319-row
+  file and runs the official validator.
+- **Output:** sha256 `8612514a69e9c58045ab5c0ccdad20808aa48bdfd45d0566f8389eb43defa8c5`.
+- **Cost:** about 30 s on a laptop CPU, peak 0.6 GB RAM. No training and no GPU.
+- **Retraining:** needs the PFF data. The order is in `docs/dev_log/step1_report.md`:
+  1. measure the match's rates (`barca_possession.load`);
+  2. degrade PFF (`barca_train.degrade_pff`);
+  3. ball-from-players (`scripts/ballfill_eval.py`);
+  4. CV (`scripts/cv_c3t.py`);
+  5. final fit (`scripts/fit_predict.py`).
